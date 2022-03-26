@@ -14,4 +14,4 @@ run program =
     Left err -> error $ show err
     Right exprs -> do
       register <- newIORef M.empty
-      traverse (readExpr register) exprs
+      traverse (read' register) exprs

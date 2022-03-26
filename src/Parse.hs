@@ -4,7 +4,7 @@ import Text.Parsec
 import Text.Parsec.Expr
 import Text.Parsec.Language
 import Text.Parsec.Token
-import Lang (Expr (..))
+import Lang (Value (..))
 
 import Data.Char (isAlpha, isAlphaNum, isAscii, isDigit)
 
@@ -36,13 +36,13 @@ list = do
   m_symbol "("
   exprs <- many expr
   m_symbol ")"
-  pure $ ListExpr exprs
+  pure $ List exprs
 
-int = IntExpr <$> m_integer
+int = Int' <$> m_integer
 
-strExpr = StringExpr <$> m_stringLit
+strExpr = String' <$> m_stringLit
 
-symbolExpr = SymbolExpr <$> m_identifier
+symbolExpr = Symbol <$> m_identifier
 
 program = do
   m_whiteSpace
@@ -50,5 +50,5 @@ program = do
   eof
   pure exprs
 
-parse :: SourceName -> String -> Either ParseError [Expr]
+parse :: SourceName -> String -> Either ParseError [Value]
 parse = Text.Parsec.parse program

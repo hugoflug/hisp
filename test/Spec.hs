@@ -13,16 +13,16 @@ main :: IO ()
 main = hspec $ do
   describe "parse" $ do
     it "should parse simple expression" $ do
-      parse "" "(1 2 3)" `shouldBe` (Right [ListExpr [(IntExpr 1), (IntExpr 2), (IntExpr 3)]])
+      parse "" "(1 2 3)" `shouldBe` (Right [List [(Int' 1), (Int' 2), (Int' 3)]])
     it "should parse empty list" $ do
-      parse "" "()" `shouldBe` (Right [ListExpr []])
+      parse "" "()" `shouldBe` (Right [List []])
     it "should parse more complicated expression" $
-      parse "" "(1 (2 lol 5) \"a\")" `shouldBe` (Right [ListExpr [(IntExpr 1), (ListExpr [IntExpr 2, SymbolExpr "lol", IntExpr 5]), StringExpr "a"]])
+      parse "" "(1 (2 lol 5) \"a\")" `shouldBe` (Right [List [(Int' 1), (List [Int' 2, Symbol "lol", Int' 5]), String' "a"]])
     it "should parse symbols" $
-      parse "" "cow" `shouldBe` (Right [SymbolExpr "cow"])
+      parse "" "cow" `shouldBe` (Right [Symbol "cow"])
     it "should allow multiple expressions" $
-      parse "" "() 5 \"b\" hey" `shouldBe` (Right [ListExpr [], IntExpr 5, StringExpr "b", SymbolExpr "hey"])
+      parse "" "() 5 \"b\" hey" `shouldBe` (Right [List [], Int' 5, String' "b", Symbol "hey"])
   describe "run" $ do
     it "should support def" $ do
       result <- run "(def a 5) a"
-      result `shouldBe` [Nil, IntValue 5]
+      result `shouldBe` [Nil, Int' 5]

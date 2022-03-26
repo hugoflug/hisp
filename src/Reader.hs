@@ -7,41 +7,40 @@ import Data.Maybe (fromMaybe)
 import Data.IORef (IORef, readIORef, modifyIORef)
 import Lang
 
-readExpr :: IORef (M.Map String Value) -> Expr -> IO Value
-readExpr register expr = 
-  case expr of
-    IntExpr i -> pure $ IntValue i
-    StringExpr s -> pure $ StringValue s
-    SymbolExpr name -> do
+read' :: IORef (M.Map String Value) -> Value -> IO Value
+read' register val = 
+  case val of
+    Symbol name -> do
       reg <- readIORef register
       case reg !? name of
-        Just val -> pure val
-        Nothing -> pure Nil -- or fail?
-    ListExpr (fn : tail) ->
+        Just v -> pure v
+        Nothing -> error $ "No such symbol: " <> name
+    List (fn : tail) ->
       case fn of
-        SymbolExpr name -> do
+        Symbol name -> do
           case builtIn register name tail of
             Just action -> action
             Nothing -> error "No such built-in"
-        _ -> error "No symbol in function position"
+        _ -> error "No function at head of list"
+    v -> pure v
 
 printVal :: Value -> String 
 printVal v = case v of
-  IntValue i -> show i
-  StringValue i -> show i
+  Int' i -> show i
+  String' i -> show i
   Nil -> "nil"
 
-builtIn :: IORef (M.Map String Value) -> String -> [Expr] -> Maybe (IO Value)
-builtIn register name exprs =
+builtIn :: IORef (M.Map String Value) -> String -> [Value] -> Maybe (IO Value)
+builtIn register name values =
   case name of
     "print" -> Just $ do
-      values <- traverse (readExpr register) exprs
-      putStrLn $ intercalate " " $ printVal <$> values
+      readValues <- traverse (read' register) values
+      putStrLn $ intercalate " " $ printVal <$> readValues
       pure Nil
     "def" -> Just $
-      case exprs of
-        [SymbolExpr name, valExpr] -> do
-          val <- readExpr register valExpr
+      case values of
+        [Symbol name, val] -> do
+          readVal <- read' register val
           modifyIORef register $ \reg ->
             M.insert name val reg
           pure Nil
