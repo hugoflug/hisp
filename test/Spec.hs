@@ -24,5 +24,5 @@ main = hspec $ do
       parse "" "() 5 \"b\" hey" `shouldBe` (Right [ListExpr [], IntExpr 5, StringExpr "b", SymbolExpr "hey"])
   describe "run" $ do
     it "should support def" $ do
-      result <- run "(def \"a\" 5) a"
+      result <- run "(def a 5) a"
       result `shouldBe` [Nil, IntValue 5]

@@ -20,8 +20,7 @@ readExpr register expr =
     ListExpr (fn : tail) ->
       case fn of
         SymbolExpr name -> do
-          values <- traverse (readExpr register) tail
-          case builtIn register name values of
+          case builtIn register name tail of
             Just action -> action
             Nothing -> error "No such built-in"
         _ -> error "No symbol in function position"
@@ -32,18 +31,20 @@ printVal v = case v of
   StringValue i -> show i
   Nil -> "nil"
 
-builtIn :: IORef (M.Map String Value) -> String -> [Value] -> Maybe (IO Value)
-builtIn register name values =
+builtIn :: IORef (M.Map String Value) -> String -> [Expr] -> Maybe (IO Value)
+builtIn register name exprs =
   case name of
     "print" -> Just $ do
+      values <- traverse (readExpr register) exprs
       putStrLn $ intercalate " " $ printVal <$> values
       pure Nil
     "def" -> Just $
-      case values of
-        [StringValue name, val] -> do -- TODO: should be symbol instead of string
+      case exprs of
+        [SymbolExpr name, valExpr] -> do
+          val <- readExpr register valExpr
           modifyIORef register $ \reg ->
             M.insert name val reg
           pure Nil
-        _ -> error "Wrong arguments to def"
-
+        [_, _] -> error "First argument to def not a symbol"
+        _ -> error "Wrong number of arguments to def"
     _ -> Nothing
