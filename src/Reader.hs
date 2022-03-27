@@ -11,13 +11,15 @@ import Lang
 
 -- Let (could be a macro?)
 -- Closures?
--- List operations (cons)
+-- Rename 'read' to 'eval'
 -- Line numbers at errs
 -- Be more liberal with accepted symbols
--- Macro without explicit quoting
 -- CLI
 -- Better REPL (repline?)
--- Eithers instead of err calls?
+-- Remove Function constructor?
+-- Improve exceptions
+-- Refactor
+-- Automatically load core.hisp
 
 read' :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
 read' globals locals val = 
@@ -32,11 +34,14 @@ read' globals locals val =
             Nothing -> err $ "No such symbol: " <> name
     List (fn : tail) ->
       case fn of
-        Function args body -> do
+        Function args body macro -> do
           when (length args /= length tail) $
             err $ "Wrong number of arguments"
-          readTail <- traverse (read' globals locals) tail
-          let fnLocals = M.fromList $ zip args readTail
+          fnTail <- if macro then
+              pure tail
+            else
+              traverse (read' globals locals) tail
+          let fnLocals = M.fromList $ zip args fnTail
           read' globals fnLocals body
         sym@(Symbol name) -> do
           case builtIn globals locals name tail of
@@ -51,9 +56,11 @@ printVal :: Value -> String
 printVal v = case v of
   Int' i -> show i
   String' i -> show i
+  Bool' True -> "true"
+  Bool' False -> "false"
   Symbol name -> name
   List vals -> "(" <> (printVals " " vals) <> ")"
-  Function args val -> printVal $ List [String' "fn", List (Symbol <$> args), val]
+  Function args val macro -> printVal $ List [String' (if macro then "macro" else "fn"), List (Symbol <$> args), val]
   Nil -> "nil"
 
 printVals :: String -> [Value] -> String
@@ -85,26 +92,18 @@ builtIn globals locals name values =
           pure Nil
         [_, _] -> err "First argument to def not a symbol"
         _ -> err "Wrong number of arguments to def"
-    "fn" -> Just $
-      case values of
-        [List args, body] -> do
-          symArgs <- for args $ \arg ->
-            case arg of
-              Symbol name -> pure name
-              x -> err $ "Function argument not a symbol: " <> show x
-          pure $ Function symArgs body
-        [x, _] -> err $ "First argument to fn not a list: " <> show x
-        _ -> err "Wrong number of arguments to fn"
+    "fn" -> Just $ fn globals locals False values
+    "macro" -> Just $ fn globals locals True values
     "'" -> Just $
       case values of
         [value] -> quote globals locals value
-        _ -> err "Wrong number of arguments to quote"
+        _ -> err "Wrong number of arguments to '"
     "eval" -> Just $
       case values of
         [value] -> do
           readValue <- read' globals locals value
           read' globals locals readValue
-        _ -> err "Wrong number of arguments to unquote"
+        _ -> err "Wrong number of arguments to eval"
     "cons" -> Just $
       case values of
         [val, listArg] -> do
@@ -113,7 +112,46 @@ builtIn globals locals name values =
             List list -> pure $ List $ val : list
             _ -> err "Second argument to cons not a list"
         _ -> err "Wrong number of arguments to cons"
+    "head" -> Just $
+      case values of
+        [val] -> do
+          readList <- read' globals locals val
+          case readList of
+            List (head : _) -> read' globals locals head
+            _ -> err "First argument to head not a list"
+        _ -> err "Wrong number of arguments to head"
+    "tail" -> Just $
+      case values of
+        [val] -> do
+          readList <- read' globals locals val
+          case readList of
+            List (_ : tail) -> do
+              readTail <- traverse (read' globals locals) tail
+              pure $ List readTail
+            _ -> err "First argument to tail not a list"
+        _ -> err "Wrong number of arguments to tail"
+    "if" -> Just $
+      case values of
+        [condition, then', else'] -> do
+          readCondition <- read' globals locals condition
+          case readCondition of
+            Bool' False -> read' globals locals else'
+            Nil -> read' globals locals else'
+            _ -> read' globals locals then'
+        _ -> err "Wrong number of arguments to if"
     _ -> Nothing
+
+fn :: IORef (M.Map String Value) -> M.Map String Value -> Bool -> [Value] -> IO Value
+fn globals locals macro values =
+  case values of
+    [List args, body] -> do
+      symArgs <- for args $ \arg ->
+        case arg of
+          Symbol name -> pure name
+          x -> err $ "Function argument not a symbol: " <> show x
+      pure $ Function symArgs body macro
+    [x, _] -> err $ "First argument to fn not a list: " <> show x
+    _ -> err "Wrong number of arguments to fn"
 
 -- TODO: write in hisp instead?
 quote :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
@@ -123,7 +161,7 @@ quote globals locals val =
     List vals -> do
       qVals <- traverse (quote globals locals) vals
       pure $ List qVals
-    Function args body -> do
+    Function args body macro -> do
       qBody <- quote globals locals body
-      pure $ Function args qBody
+      pure $ Function args qBody macro
     v -> pure v

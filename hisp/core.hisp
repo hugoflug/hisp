@@ -1,0 +1,7 @@
+(def defmacro 
+  (macro (name args body) 
+    (eval (' (def (~ name) (macro (~ args) (~ body)))))))
+
+(defmacro defn
+  (name args body) 
+  (eval (' (def (~ name) (fn (~ args) (~ body)))) ))

@@ -21,6 +21,7 @@ def =
     , identLetter = asciiAlphaNum <|> char '-' <|> char '+' <|> char '~' <|> char '\''
     , opStart = oneOf []
     , opLetter = oneOf []
+    , reservedNames = ["true", "false", "nil"]
     }
 
 TokenParser 
@@ -30,9 +31,10 @@ TokenParser
   , stringLiteral = m_stringLit
   , whiteSpace = m_whiteSpace
   , symbol = m_symbol
+  , reserved = m_reserved
   } = makeTokenParser def
 
-expr = list <|> symbolExpr <|> int <|> strExpr
+expr = list <|> nil <|> boolExpr <|> symbolExpr <|> int <|> strExpr
 
 list = do
   m_symbol "("
@@ -43,6 +45,20 @@ list = do
 int = Int' <$> m_integer
 
 strExpr = String' <$> m_stringLit
+
+boolExpr = trueExpr <|> falseExpr
+
+trueExpr = do
+  m_reserved "true"
+  pure $ Bool' True
+
+falseExpr = do
+  m_reserved "false"
+  pure $ Bool' False
+
+nil = do
+  m_reserved "nil"
+  pure Nil
 
 symbolExpr = Symbol <$> m_identifier
 
