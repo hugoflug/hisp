@@ -14,6 +14,7 @@ import Lang
 -- List operations (cons)
 -- Line numbers at errs
 -- Be more liberal with accepted symbols
+-- Macro without explicit quoting
 -- CLI
 -- Better REPL (repline?)
 -- Eithers instead of err calls?

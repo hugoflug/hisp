@@ -22,16 +22,16 @@ main = hspec $ do
       parse "" "cow" `shouldBe` (Right [Symbol "cow"])
     it "should allow multiple expressions" $
       parse "" "() 5 \"b\" hey" `shouldBe` (Right [List [], Int' 5, String' "b", Symbol "hey"])
-  describe "run" $ do
+  describe "run'" $ do
     it "should support def" $ do
-      result <- run "(def a 5) a"
+      result <- run' "(def a 5) a"
       result `shouldBe` [Nil, Int' 5]
     it "should support fn" $ do
-      result <- run "(def a (fn (x) x)) (a 7)"
+      result <- run' "(def a (fn (x) x)) (a 7)"
       result `shouldBe` [Nil, Int' 7]
     it "should support fn with +" $ do
-      result <- run "(def a (fn (x y) (+ x y))) (a 7 3)"
+      result <- run' "(def a (fn (x y) (+ x y))) (a 7 3)"
       result `shouldBe` [Nil, Int' 10]
     it "should support quote" $ do
-      result <- run "(quote (1 2 3))"
+      result <- run' "(quote (1 2 3))"
       result `shouldBe` [List [Int' 1, Int' 2, Int' 3]]
