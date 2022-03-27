@@ -55,12 +55,12 @@ builtIn globals locals name values =
       readValues <- traverse (read' globals locals) values
       putStrLn $ intercalate " " $ printVal <$> readValues
       pure Nil
-    "plus" -> Just $ do -- TODO: should be +
+    "+" -> Just $ do
       readValues <- traverse (read' globals locals) values
       intArgs <- for readValues $ \arg ->
             case arg of
               Int' i -> pure i
-              _ -> error "Argument to plus not an integer"
+              _ -> error "Argument to + not an integer"
       pure $ Int' $ sum intArgs
     "def" -> Just $
       case values of

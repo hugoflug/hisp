@@ -30,5 +30,5 @@ main = hspec $ do
       result <- run "(def a (fn (x) x)) (a 7)"
       result `shouldBe` [Nil, Int' 7]
     it "should support fn with +" $ do
-      result <- run "(def a (fn (x y) (plus x y))) (a 7 3)"
+      result <- run "(def a (fn (x y) (+ x y))) (a 7 3)"
       result `shouldBe` [Nil, Int' 10]

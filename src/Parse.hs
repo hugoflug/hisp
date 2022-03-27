@@ -32,7 +32,7 @@ TokenParser
   , symbol = m_symbol
   } = makeTokenParser def
 
-expr = list <|> int <|> strExpr <|> symbolExpr
+expr = list <|> symbolExpr <|> int <|> strExpr
 
 list = do
   m_symbol "("
