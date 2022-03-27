@@ -11,10 +11,12 @@ import Lang
 
 -- Let (could be a macro?)
 -- Closures?
--- Line numbers at errors
+-- List operations (cons)
+-- Line numbers at errs
 -- Be more liberal with accepted symbols
 -- CLI
--- Eithers instead of error calls?
+-- Better REPL (repline?)
+-- Eithers instead of err calls?
 
 read' :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
 read' globals locals val = 
@@ -26,12 +28,12 @@ read' globals locals val =
           reg <- readIORef globals
           case reg !? name of
             Just v -> pure v
-            Nothing -> error $ "No such symbol: " <> name
+            Nothing -> err $ "No such symbol: " <> name
     List (fn : tail) ->
       case fn of
         Function args body -> do
           when (length args /= length tail) $
-            error $ "Wrong number of arguments"
+            err $ "Wrong number of arguments"
           let fnLocals = M.fromList $ zip args tail
           read' globals fnLocals body
         sym@(Symbol name) -> do
@@ -40,7 +42,7 @@ read' globals locals val =
             Nothing -> do
               readSym <- read' globals locals sym
               read' globals locals (List (readSym : tail))
-        _ -> error "No function at head of list"
+        _ -> err "No function at head of list"
     v -> pure v
 
 printVal :: Value -> String 
@@ -48,23 +50,29 @@ printVal v = case v of
   Int' i -> show i
   String' i -> show i
   Symbol name -> name
-  List vals -> "(" <> (intercalate " " $ printVal <$> vals) <> ")"
+  List vals -> "(" <> (printVals " " vals) <> ")"
   Function args val -> "fn" -- TODO
   Nil -> "nil"
+
+printVals :: String -> [Value] -> String
+printVals separator = intercalate separator . fmap printVal
+
+err :: String -> IO a
+err = ioError . userError
 
 builtIn :: IORef (M.Map String Value) -> M.Map String Value -> String -> [Value] -> Maybe (IO Value)
 builtIn globals locals name values =
   case name of
     "print" -> Just $ do
       readValues <- traverse (read' globals locals) values
-      putStrLn $ intercalate " " $ printVal <$> readValues
+      putStrLn $ printVals " " readValues
       pure Nil
     "+" -> Just $ do
       readValues <- traverse (read' globals locals) values
       intArgs <- for readValues $ \arg ->
             case arg of
               Int' i -> pure i
-              _ -> error "Argument to + not an integer"
+              _ -> err "Argument to + not an integer"
       pure $ Int' $ sum intArgs
     "def" -> Just $
       case values of
@@ -73,20 +81,34 @@ builtIn globals locals name values =
           modifyIORef globals $ \glob ->
             M.insert name readVal glob
           pure Nil
-        [_, _] -> error "First argument to def not a symbol"
-        _ -> error "Wrong number of arguments to def"
+        [_, _] -> err "First argument to def not a symbol"
+        _ -> err "Wrong number of arguments to def"
     "fn" -> Just $
       case values of
         [List args, body] -> do
           symArgs <- for args $ \arg ->
             case arg of
               Symbol name -> pure name
-              _ -> error "Function argument not a symbol"
+              _ -> err "Function argument not a symbol"
           pure $ Function symArgs body
-        [_, _] -> error "First argument to fn not a list"
-        _ -> error "Wrong number of arguments to fn"
+        [_, _] -> err "First argument to fn not a list"
+        _ -> err "Wrong number of arguments to fn"
     "quote" -> Just $
       case values of
         [value] -> pure value
-        _ -> error "Wrong number of arguments to quote"
+        _ -> err "Wrong number of arguments to quote"
+    "unquote" -> Just $
+      case values of
+        [value] -> do
+          readValue <- read' globals locals value
+          read' globals locals readValue
+        _ -> err "Wrong number of arguments to unquote"
+    "cons" -> Just $
+      case values of
+        [val, listArg] -> do
+          readList <- read' globals locals listArg
+          case readList of
+            List list -> pure $ List $ val : list
+            _ -> err "Second argument to cons not a list"
+        _ -> err "Wrong number of arguments to cons"
     _ -> Nothing
