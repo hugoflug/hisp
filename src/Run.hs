@@ -16,7 +16,8 @@ import System.IO (hFlush, stdout, getLine)
 runFile :: FilePath -> IO ()
 runFile filename = do
   program <- readFile filename
-  void $ run' program
+  values <- run' program
+  putStrLn $ printVals "\n" values
 
 run :: IORef (M.Map String Value) -> String -> IO [Value]
 run globals program = 

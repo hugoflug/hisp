@@ -15,10 +15,10 @@ asciiLetter = satisfy (\c -> isAlpha c && isAscii c)
 def =
   emptyDef
     {
-      commentLine = "#"
+      commentLine = ";"
     , caseSensitive = True
-    , identStart = asciiLetter <|> char '-' <|> char '+'
-    , identLetter = asciiAlphaNum <|> char '-' <|> char '+'
+    , identStart = asciiLetter <|> char '-' <|> char '+' <|> char '~' <|> char '\''
+    , identLetter = asciiAlphaNum <|> char '-' <|> char '+' <|> char '~' <|> char '\''
     , opStart = oneOf []
     , opLetter = oneOf []
     }

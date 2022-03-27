@@ -35,7 +35,8 @@ read' globals locals val =
         Function args body -> do
           when (length args /= length tail) $
             err $ "Wrong number of arguments"
-          let fnLocals = M.fromList $ zip args tail
+          readTail <- traverse (read' globals locals) tail
+          let fnLocals = M.fromList $ zip args readTail
           read' globals fnLocals body
         sym@(Symbol name) -> do
           case builtIn globals locals name tail of
@@ -52,7 +53,7 @@ printVal v = case v of
   String' i -> show i
   Symbol name -> name
   List vals -> "(" <> (printVals " " vals) <> ")"
-  Function args val -> "fn" -- TODO
+  Function args val -> printVal $ List [String' "fn", List (Symbol <$> args), val]
   Nil -> "nil"
 
 printVals :: String -> [Value] -> String
@@ -90,15 +91,15 @@ builtIn globals locals name values =
           symArgs <- for args $ \arg ->
             case arg of
               Symbol name -> pure name
-              _ -> err "Function argument not a symbol"
+              x -> err $ "Function argument not a symbol: " <> show x
           pure $ Function symArgs body
-        [_, _] -> err "First argument to fn not a list"
+        [x, _] -> err $ "First argument to fn not a list: " <> show x
         _ -> err "Wrong number of arguments to fn"
-    "quote" -> Just $
+    "'" -> Just $
       case values of
-        [value] -> pure value
+        [value] -> quote globals locals value
         _ -> err "Wrong number of arguments to quote"
-    "unquote" -> Just $
+    "eval" -> Just $
       case values of
         [value] -> do
           readValue <- read' globals locals value
@@ -113,3 +114,16 @@ builtIn globals locals name values =
             _ -> err "Second argument to cons not a list"
         _ -> err "Wrong number of arguments to cons"
     _ -> Nothing
+
+-- TODO: write in hisp instead?
+quote :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
+quote globals locals val =
+  case val of
+    List [Symbol "~", v] -> read' globals locals v
+    List vals -> do
+      qVals <- traverse (quote globals locals) vals
+      pure $ List qVals
+    Function args body -> do
+      qBody <- quote globals locals body
+      pure $ Function args qBody
+    v -> pure v
