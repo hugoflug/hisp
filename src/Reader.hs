@@ -20,6 +20,8 @@ import Lang
 -- Improve exceptions
 -- Refactor
 -- Automatically load core.hisp
+-- It should be possible to override built-ins
+-- Built-ins can not be referred to without calling them
 
 read' :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
 read' globals locals val = 
@@ -34,6 +36,10 @@ read' globals locals val =
             Nothing -> err $ "No such symbol: " <> name
     List (fn : tail) ->
       case fn of
+        List [] -> pure $ List []
+        list@(List _) -> do
+          readList <- read' globals locals list
+          read' globals locals $ List $ readList : tail
         Function args body macro -> do
           when (length args /= length tail) $
             err $ "Wrong number of arguments"
@@ -60,7 +66,7 @@ printVal v = case v of
   Bool' False -> "false"
   Symbol name -> name
   List vals -> "(" <> (printVals " " vals) <> ")"
-  Function args val macro -> printVal $ List [String' (if macro then "macro" else "fn"), List (Symbol <$> args), val]
+  Function args val macro -> printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
   Nil -> "nil"
 
 printVals :: String -> [Value] -> String
@@ -107,9 +113,10 @@ builtIn globals locals name values =
     "cons" -> Just $
       case values of
         [val, listArg] -> do
+          readVal <- read' globals locals val
           readList <- read' globals locals listArg
           case readList of
-            List list -> pure $ List $ val : list
+            List list -> pure $ List $ readVal : list
             _ -> err "Second argument to cons not a list"
         _ -> err "Wrong number of arguments to cons"
     "head" -> Just $
@@ -117,7 +124,7 @@ builtIn globals locals name values =
         [val] -> do
           readList <- read' globals locals val
           case readList of
-            List (head : _) -> read' globals locals head
+            List (head : _) -> pure head
             _ -> err "First argument to head not a list"
         _ -> err "Wrong number of arguments to head"
     "tail" -> Just $
@@ -125,9 +132,7 @@ builtIn globals locals name values =
         [val] -> do
           readList <- read' globals locals val
           case readList of
-            List (_ : tail) -> do
-              readTail <- traverse (read' globals locals) tail
-              pure $ List readTail
+            List (_ : tail) -> pure $ List tail
             _ -> err "First argument to tail not a list"
         _ -> err "Wrong number of arguments to tail"
     "if" -> Just $
@@ -139,6 +144,13 @@ builtIn globals locals name values =
             Nil -> read' globals locals else'
             _ -> read' globals locals then'
         _ -> err "Wrong number of arguments to if"
+    "=" -> Just $
+      case values of
+        [lhs, rhs] -> do
+          readLhs <- read' globals locals lhs
+          readRhs <- read' globals locals rhs
+          pure $ Bool' $ readLhs == readRhs
+        _ -> err "Wrong number of arguments to ="
     _ -> Nothing
 
 fn :: IORef (M.Map String Value) -> M.Map String Value -> Bool -> [Value] -> IO Value
