@@ -17,8 +17,10 @@ def =
     {
       commentLine = "#"
     , caseSensitive = True
-    , identStart = asciiLetter <|> char '-'
-    , identLetter = asciiAlphaNum
+    , identStart = asciiLetter <|> char '-' <|> char '+'
+    , identLetter = asciiAlphaNum <|> char '-' <|> char '+'
+    , opStart = oneOf []
+    , opLetter = oneOf []
     }
 
 TokenParser 

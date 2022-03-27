@@ -13,5 +13,6 @@ run program =
   case parse "" program of
     Left err -> error $ show err
     Right exprs -> do
-      register <- newIORef M.empty
-      traverse (read' register) exprs
+      globals <- newIORef M.empty
+      let locals = M.empty
+      traverse (read' globals locals) exprs

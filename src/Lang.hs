@@ -5,5 +5,6 @@ data Value =
   String' String |
   Symbol String |
   List [Value] |
+  Function [String] Value |
   Nil
   deriving (Show, Eq)
