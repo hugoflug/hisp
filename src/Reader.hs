@@ -9,11 +9,12 @@ import Data.IORef (IORef, readIORef, modifyIORef)
 import Data.Traversable (for)
 import Lang
 
--- Quoting
 -- Let (could be a macro?)
 -- Closures?
 -- Line numbers at errors
 -- Be more liberal with accepted symbols
+-- CLI
+-- Eithers instead of error calls?
 
 read' :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
 read' globals locals val = 
@@ -46,6 +47,9 @@ printVal :: Value -> String
 printVal v = case v of
   Int' i -> show i
   String' i -> show i
+  Symbol name -> name
+  List vals -> "(" <> (intercalate " " $ printVal <$> vals) <> ")"
+  Function args val -> "fn" -- TODO
   Nil -> "nil"
 
 builtIn :: IORef (M.Map String Value) -> M.Map String Value -> String -> [Value] -> Maybe (IO Value)
@@ -81,4 +85,8 @@ builtIn globals locals name values =
           pure $ Function symArgs body
         [_, _] -> error "First argument to fn not a list"
         _ -> error "Wrong number of arguments to fn"
+    "quote" -> Just $
+      case values of
+        [value] -> pure value
+        _ -> error "Wrong number of arguments to quote"
     _ -> Nothing
