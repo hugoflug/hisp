@@ -1,4 +1,4 @@
-module Reader where
+module Eval where
 
 import Control.Monad (when)
 import Data.List (intercalate)
@@ -10,7 +10,6 @@ import Data.Traversable (for)
 import Lang
 
 -- Closures?
--- Rename 'read' to 'eval'
 -- Line numbers at errs
 -- Be more liberal with accepted symbols
 -- CLI
@@ -24,8 +23,8 @@ import Lang
 -- Think about macroexpand
 -- Could fn be a macro that just evals args?
 
-read' :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
-read' globals locals val = 
+eval :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
+eval globals locals val = 
   case val of
     Symbol name -> do
       case locals !? name of
@@ -34,24 +33,26 @@ read' globals locals val =
           reg <- readIORef globals
           case reg !? name of
             Just v -> pure v
-            Nothing -> if name `elem` builtins 
-              then pure $ Builtin name 
-              else err $ "No such symbol: " <> name
+            Nothing -> case parseBuiltin name of
+              Just builtin -> pure $ Builtin' builtin
+              Nothing -> err $ "No such symbol: " <> name
+
     List (head : tail) -> do
-      readHead <- read' globals locals head
-      case readHead of
-        Builtin name -> 
-          builtin globals locals name tail
+      evaledHead <- eval globals locals head
+      case evaledHead of
+        Builtin' name -> 
+          evalBuiltin globals locals name tail
         Function args body macro -> do
           when (length args /= length tail) $
             err $ "Wrong number of arguments"
           fnTail <- if macro then
               pure tail
             else
-              traverse (read' globals locals) tail
+              traverse (eval globals locals) tail
           let fnLocals = M.fromList $ zip args fnTail
-          read' globals fnLocals body
+          eval globals fnLocals body
         _ -> err "No function at head of list"
+
     v -> pure v
 
 printVal :: Value -> String 
@@ -71,90 +72,102 @@ printVals separator = intercalate separator . fmap printVal
 err :: String -> IO a
 err = ioError . userError
 
--- TODO: do this a better way
-builtins :: [String]
-builtins = ["print", "+", "def", "fn", "macro", "'", "eval", "cons", "head", "tail", "if", "="]
-
-builtin :: IORef (M.Map String Value) -> M.Map String Value -> String -> [Value] -> IO Value
-builtin globals locals name values =
+parseBuiltin :: String -> Maybe Builtin
+parseBuiltin name =
   case name of
-    "print" -> do
-      readValues <- traverse (read' globals locals) values
-      putStrLn $ printVals " " readValues
+    "print" -> Just Print
+    "+" -> Just Plus
+    "def" -> Just Def
+    "fn" -> Just Fn
+    "macro" -> Just Macro
+    "'" -> Just Quote
+    "eval" -> Just Eval
+    "cons" -> Just Cons
+    "head" -> Just Head
+    "tail" -> Just Tail
+    "if" -> Just If
+    "equals" -> Just Equals
+    _ -> Nothing
+
+evalBuiltin :: IORef (M.Map String Value) -> M.Map String Value -> Builtin -> [Value] -> IO Value
+evalBuiltin globals locals builtin values =
+  case builtin of
+    Print -> do
+      evaledValues <- traverse (eval globals locals) values
+      putStrLn $ printVals " " evaledValues
       pure Nil
-    "+" -> do
-      readValues <- traverse (read' globals locals) values
-      intArgs <- for readValues $ \arg ->
+    Plus -> do
+      evaledValues <- traverse (eval globals locals) values
+      intArgs <- for evaledValues $ \arg ->
             case arg of
               Int' i -> pure i
               _ -> err "Argument to + not an integer"
       pure $ Int' $ sum intArgs
-    "def" -> 
+    Def -> 
       case values of
         [Symbol name, val] -> do
-          readVal <- read' globals locals val
+          evaledVal <- eval globals locals val
           modifyIORef globals $ \glob ->
-            M.insert name readVal glob
+            M.insert name evaledVal glob
           pure Nil
         [_, _] -> err "First argument to def not a symbol"
         _ -> err "Wrong number of arguments to def"
-    "fn" -> fn globals locals False values
-    "macro" -> fn globals locals True values
-    "'" -> 
+    Fn -> evalFn globals locals False values
+    Macro -> evalFn globals locals True values
+    Quote -> 
       case values of
         [value] -> quote globals locals value
         _ -> err "Wrong number of arguments to '"
-    "eval" ->
+    Eval ->
       case values of
         [value] -> do
-          readValue <- read' globals locals value
-          read' globals locals readValue
+          evaledValue <- eval globals locals value
+          eval globals locals evaledValue
         _ -> err "Wrong number of arguments to eval"
-    "cons" ->
+    Cons ->
       case values of
         [val, listArg] -> do
-          readVal <- read' globals locals val
-          readList <- read' globals locals listArg
-          case readList of
-            List list -> pure $ List $ readVal : list
+          evaledVal <- eval globals locals val
+          evaledList <- eval globals locals listArg
+          case evaledList of
+            List list -> pure $ List $ evaledVal : list
             _ -> err "Second argument to cons not a list"
         _ -> err "Wrong number of arguments to cons"
-    "head" ->
+    Head ->
       case values of
         [val] -> do
-          readList <- read' globals locals val
-          case readList of
+          evaledList <- eval globals locals val
+          case evaledList of
             List (head : _) -> pure head
             _ -> err "First argument to head not a list"
         _ -> err "Wrong number of arguments to head"
-    "tail" ->
+    Tail ->
       case values of
         [val] -> do
-          readList <- read' globals locals val
-          case readList of
+          evaledList <- eval globals locals val
+          case evaledList of
             List (_ : tail) -> pure $ List tail
             _ -> err "First argument to tail not a list"
         _ -> err "Wrong number of arguments to tail"
-    "if" ->
+    If ->
       case values of
         [condition, then', else'] -> do
-          readCondition <- read' globals locals condition
-          case readCondition of
-            Bool' False -> read' globals locals else'
-            Nil -> read' globals locals else'
-            _ -> read' globals locals then'
+          evaledCondition <- eval globals locals condition
+          case evaledCondition of
+            Bool' False -> eval globals locals else'
+            Nil -> eval globals locals else'
+            _ -> eval globals locals then'
         _ -> err "Wrong number of arguments to if"
-    "=" -> 
+    Equals -> 
       case values of
         [lhs, rhs] -> do
-          readLhs <- read' globals locals lhs
-          readRhs <- read' globals locals rhs
-          pure $ Bool' $ readLhs == readRhs
+          evaledLhs <- eval globals locals lhs
+          evaledRhs <- eval globals locals rhs
+          pure $ Bool' $ evaledLhs == evaledRhs
         _ -> err "Wrong number of arguments to ="
-    _ -> err $ "No such built-in: " <> name
 
-fn :: IORef (M.Map String Value) -> M.Map String Value -> Bool -> [Value] -> IO Value
-fn globals locals macro values =
+evalFn :: IORef (M.Map String Value) -> M.Map String Value -> Bool -> [Value] -> IO Value
+evalFn globals locals macro values =
   case values of
     [List args, body] -> do
       symArgs <- for args $ \arg ->
@@ -169,7 +182,7 @@ fn globals locals macro values =
 quote :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
 quote globals locals val =
   case val of
-    List [Symbol "~", v] -> read' globals locals v
+    List [Symbol "~", v] -> eval globals locals v
     List vals -> do
       qVals <- traverse (quote globals locals) vals
       pure $ List qVals

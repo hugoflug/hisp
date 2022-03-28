@@ -7,6 +7,21 @@ data Value =
   Symbol String |
   List [Value] |
   Function [String] Value Bool |
-  Builtin String |
+  Builtin' Builtin |
   Nil
+  deriving (Show, Eq)
+
+data Builtin =
+  Print |
+  Plus |
+  Def |
+  Fn |
+  Macro |
+  Quote |
+  Eval |
+  Cons |
+  Head |
+  Tail |
+  If |
+  Equals
   deriving (Show, Eq)

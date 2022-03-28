@@ -3,7 +3,7 @@
 module Run where
 
 import Parse 
-import Reader
+import Eval
 import Lang
 
 import Control.Exception (handle, displayException, SomeException)
@@ -23,7 +23,7 @@ run :: IORef (M.Map String Value) -> String -> IO [Value]
 run globals program = 
   case parse "" program of
     Left err -> error $ show err
-    Right exprs -> traverse (read' globals M.empty) exprs
+    Right exprs -> traverse (eval globals M.empty) exprs
 
 run' :: String -> IO [Value]
 run' program = do
