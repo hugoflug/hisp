@@ -23,8 +23,13 @@ import Lang
 -- Think about macroexpand
 -- Could fn be a macro that just evals args?
 
-eval :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
-eval globals locals val = 
+data Context = Context {
+  globals :: IORef (M.Map String Value),
+  locals :: M.Map String Value
+}
+
+eval :: Context -> Value -> IO Value
+eval ctx@(Context globals locals) val =
   case val of
     Symbol name -> do
       case locals !? name of
@@ -38,19 +43,19 @@ eval globals locals val =
               Nothing -> err $ "No such symbol: " <> name
 
     List (head : tail) -> do
-      evaledHead <- eval globals locals head
+      evaledHead <- eval ctx head
       case evaledHead of
         Builtin' name -> 
-          evalBuiltin globals locals name tail
+          evalBuiltin ctx name tail
         Function args body macro -> do
           when (length args /= length tail) $
             err $ "Wrong number of arguments"
           fnTail <- if macro then
               pure tail
             else
-              traverse (eval globals locals) tail
+              traverse (eval ctx) tail
           let fnLocals = M.fromList $ zip args fnTail
-          eval globals fnLocals body
+          eval ctx{locals = fnLocals} body
         _ -> err "No function at head of list"
 
     v -> pure v
@@ -89,15 +94,15 @@ parseBuiltin name =
     "equals" -> Just Equals
     _ -> Nothing
 
-evalBuiltin :: IORef (M.Map String Value) -> M.Map String Value -> Builtin -> [Value] -> IO Value
-evalBuiltin globals locals builtin values =
+evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
+evalBuiltin ctx@(Context globals locals) builtin values =
   case builtin of
     Print -> do
-      evaledValues <- traverse (eval globals locals) values
+      evaledValues <- traverse (eval ctx) values
       putStrLn $ printVals " " evaledValues
       pure Nil
     Plus -> do
-      evaledValues <- traverse (eval globals locals) values
+      evaledValues <- traverse (eval ctx) values
       intArgs <- for evaledValues $ \arg ->
             case arg of
               Int' i -> pure i
@@ -106,29 +111,29 @@ evalBuiltin globals locals builtin values =
     Def -> 
       case values of
         [Symbol name, val] -> do
-          evaledVal <- eval globals locals val
+          evaledVal <- eval ctx val
           modifyIORef globals $ \glob ->
             M.insert name evaledVal glob
           pure Nil
         [_, _] -> err "First argument to def not a symbol"
         _ -> err "Wrong number of arguments to def"
-    Fn -> evalFn globals locals False values
-    Macro -> evalFn globals locals True values
+    Fn -> evalFn False values
+    Macro -> evalFn True values
     Quote -> 
       case values of
-        [value] -> quote globals locals value
+        [value] -> quote ctx value
         _ -> err "Wrong number of arguments to '"
     Eval ->
       case values of
         [value] -> do
-          evaledValue <- eval globals locals value
-          eval globals locals evaledValue
+          evaledValue <- eval ctx value
+          eval ctx evaledValue
         _ -> err "Wrong number of arguments to eval"
     Cons ->
       case values of
         [val, listArg] -> do
-          evaledVal <- eval globals locals val
-          evaledList <- eval globals locals listArg
+          evaledVal <- eval ctx val
+          evaledList <- eval ctx listArg
           case evaledList of
             List list -> pure $ List $ evaledVal : list
             _ -> err "Second argument to cons not a list"
@@ -136,7 +141,7 @@ evalBuiltin globals locals builtin values =
     Head ->
       case values of
         [val] -> do
-          evaledList <- eval globals locals val
+          evaledList <- eval ctx val
           case evaledList of
             List (head : _) -> pure head
             _ -> err "First argument to head not a list"
@@ -144,7 +149,7 @@ evalBuiltin globals locals builtin values =
     Tail ->
       case values of
         [val] -> do
-          evaledList <- eval globals locals val
+          evaledList <- eval ctx val
           case evaledList of
             List (_ : tail) -> pure $ List tail
             _ -> err "First argument to tail not a list"
@@ -152,22 +157,22 @@ evalBuiltin globals locals builtin values =
     If ->
       case values of
         [condition, then', else'] -> do
-          evaledCondition <- eval globals locals condition
+          evaledCondition <- eval ctx condition
           case evaledCondition of
-            Bool' False -> eval globals locals else'
-            Nil -> eval globals locals else'
-            _ -> eval globals locals then'
+            Bool' False -> eval ctx else'
+            Nil -> eval ctx else'
+            _ -> eval ctx then'
         _ -> err "Wrong number of arguments to if"
     Equals -> 
       case values of
         [lhs, rhs] -> do
-          evaledLhs <- eval globals locals lhs
-          evaledRhs <- eval globals locals rhs
+          evaledLhs <- eval ctx lhs
+          evaledRhs <- eval ctx rhs
           pure $ Bool' $ evaledLhs == evaledRhs
         _ -> err "Wrong number of arguments to ="
 
-evalFn :: IORef (M.Map String Value) -> M.Map String Value -> Bool -> [Value] -> IO Value
-evalFn globals locals macro values =
+evalFn :: Bool -> [Value] -> IO Value
+evalFn macro values =
   case values of
     [List args, body] -> do
       symArgs <- for args $ \arg ->
@@ -179,14 +184,14 @@ evalFn globals locals macro values =
     _ -> err "Wrong number of arguments to fn"
 
 -- TODO: write in hisp instead?
-quote :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
-quote globals locals val =
+quote :: Context -> Value -> IO Value
+quote ctx@(Context globals locals) val =
   case val of
-    List [Symbol "~", v] -> eval globals locals v
+    List [Symbol "~", v] -> eval ctx v
     List vals -> do
-      qVals <- traverse (quote globals locals) vals
+      qVals <- traverse (quote ctx) vals
       pure $ List qVals
     Function args body macro -> do
-      qBody <- quote globals locals body
+      qBody <- quote ctx body
       pure $ Function args qBody macro
     v -> pure v
