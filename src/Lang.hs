@@ -7,5 +7,6 @@ data Value =
   Symbol String |
   List [Value] |
   Function [String] Value Bool |
+  Builtin String |
   Nil
   deriving (Show, Eq)

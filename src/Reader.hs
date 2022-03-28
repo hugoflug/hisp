@@ -9,7 +9,6 @@ import Data.IORef (IORef, readIORef, modifyIORef)
 import Data.Traversable (for)
 import Lang
 
--- Let (could be a macro?)
 -- Closures?
 -- Rename 'read' to 'eval'
 -- Line numbers at errs
@@ -22,6 +21,8 @@ import Lang
 -- Automatically load core.hisp
 -- It should be possible to override built-ins
 -- Built-ins can not be referred to without calling them
+-- Think about macroexpand
+-- Could fn be a macro that just evals args?
 
 read' :: IORef (M.Map String Value) -> M.Map String Value -> Value -> IO Value
 read' globals locals val = 
@@ -33,13 +34,14 @@ read' globals locals val =
           reg <- readIORef globals
           case reg !? name of
             Just v -> pure v
-            Nothing -> err $ "No such symbol: " <> name
-    List (fn : tail) ->
-      case fn of
-        List [] -> pure $ List []
-        list@(List _) -> do
-          readList <- read' globals locals list
-          read' globals locals $ List $ readList : tail
+            Nothing -> if name `elem` builtins 
+              then pure $ Builtin name 
+              else err $ "No such symbol: " <> name
+    List (head : tail) -> do
+      readHead <- read' globals locals head
+      case readHead of
+        Builtin name -> 
+          builtin globals locals name tail
         Function args body macro -> do
           when (length args /= length tail) $
             err $ "Wrong number of arguments"
@@ -49,12 +51,6 @@ read' globals locals val =
               traverse (read' globals locals) tail
           let fnLocals = M.fromList $ zip args fnTail
           read' globals fnLocals body
-        sym@(Symbol name) -> do
-          case builtIn globals locals name tail of
-            Just action -> action
-            Nothing -> do
-              readSym <- read' globals locals sym
-              read' globals locals (List (readSym : tail))
         _ -> err "No function at head of list"
     v -> pure v
 
@@ -75,21 +71,25 @@ printVals separator = intercalate separator . fmap printVal
 err :: String -> IO a
 err = ioError . userError
 
-builtIn :: IORef (M.Map String Value) -> M.Map String Value -> String -> [Value] -> Maybe (IO Value)
-builtIn globals locals name values =
+-- TODO: do this a better way
+builtins :: [String]
+builtins = ["print", "+", "def", "fn", "macro", "'", "eval", "cons", "head", "tail", "if", "="]
+
+builtin :: IORef (M.Map String Value) -> M.Map String Value -> String -> [Value] -> IO Value
+builtin globals locals name values =
   case name of
-    "print" -> Just $ do
+    "print" -> do
       readValues <- traverse (read' globals locals) values
       putStrLn $ printVals " " readValues
       pure Nil
-    "+" -> Just $ do
+    "+" -> do
       readValues <- traverse (read' globals locals) values
       intArgs <- for readValues $ \arg ->
             case arg of
               Int' i -> pure i
               _ -> err "Argument to + not an integer"
       pure $ Int' $ sum intArgs
-    "def" -> Just $
+    "def" -> 
       case values of
         [Symbol name, val] -> do
           readVal <- read' globals locals val
@@ -98,19 +98,19 @@ builtIn globals locals name values =
           pure Nil
         [_, _] -> err "First argument to def not a symbol"
         _ -> err "Wrong number of arguments to def"
-    "fn" -> Just $ fn globals locals False values
-    "macro" -> Just $ fn globals locals True values
-    "'" -> Just $
+    "fn" -> fn globals locals False values
+    "macro" -> fn globals locals True values
+    "'" -> 
       case values of
         [value] -> quote globals locals value
         _ -> err "Wrong number of arguments to '"
-    "eval" -> Just $
+    "eval" ->
       case values of
         [value] -> do
           readValue <- read' globals locals value
           read' globals locals readValue
         _ -> err "Wrong number of arguments to eval"
-    "cons" -> Just $
+    "cons" ->
       case values of
         [val, listArg] -> do
           readVal <- read' globals locals val
@@ -119,7 +119,7 @@ builtIn globals locals name values =
             List list -> pure $ List $ readVal : list
             _ -> err "Second argument to cons not a list"
         _ -> err "Wrong number of arguments to cons"
-    "head" -> Just $
+    "head" ->
       case values of
         [val] -> do
           readList <- read' globals locals val
@@ -127,7 +127,7 @@ builtIn globals locals name values =
             List (head : _) -> pure head
             _ -> err "First argument to head not a list"
         _ -> err "Wrong number of arguments to head"
-    "tail" -> Just $
+    "tail" ->
       case values of
         [val] -> do
           readList <- read' globals locals val
@@ -135,7 +135,7 @@ builtIn globals locals name values =
             List (_ : tail) -> pure $ List tail
             _ -> err "First argument to tail not a list"
         _ -> err "Wrong number of arguments to tail"
-    "if" -> Just $
+    "if" ->
       case values of
         [condition, then', else'] -> do
           readCondition <- read' globals locals condition
@@ -144,14 +144,14 @@ builtIn globals locals name values =
             Nil -> read' globals locals else'
             _ -> read' globals locals then'
         _ -> err "Wrong number of arguments to if"
-    "=" -> Just $
+    "=" -> 
       case values of
         [lhs, rhs] -> do
           readLhs <- read' globals locals lhs
           readRhs <- read' globals locals rhs
           pure $ Bool' $ readLhs == readRhs
         _ -> err "Wrong number of arguments to ="
-    _ -> Nothing
+    _ -> err $ "No such built-in: " <> name
 
 fn :: IORef (M.Map String Value) -> M.Map String Value -> Bool -> [Value] -> IO Value
 fn globals locals macro values =

@@ -33,5 +33,5 @@ main = hspec $ do
       result <- run' "(def a (fn (x y) (+ x y))) (a 7 3)"
       result `shouldBe` [Nil, Int' 10]
     it "should support quote" $ do
-      result <- run' "(quote (1 2 3))"
+      result <- run' "(' (1 2 3))"
       result `shouldBe` [List [Int' 1, Int' 2, Int' 3]]

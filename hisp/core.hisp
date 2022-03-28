@@ -6,16 +6,16 @@
   (name args body) 
   (eval (' (def (~ name) (fn (~ args) (~ body)))) ))
 
-(defn map 
-  (f list) 
+(defn map
+  (f list)
   (if (= list ())
     ()
     (cons 
-      (f (head list)) 
+      (f (head list))
       (map f (tail list)))))
 
-(defn filter 
-  (f list) 
+(defn filter
+  (f list)
   (if (= list ())
     ()
     (if (f (head list)) 
