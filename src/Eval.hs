@@ -1,6 +1,6 @@
 module Eval where
 
-import Control.Monad (when)
+import Control.Monad (when, join)
 import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Map ((!?), union)
@@ -91,7 +91,9 @@ parseBuiltin name =
     "head" -> Just Head
     "tail" -> Just Tail
     "if" -> Just If
-    "equals" -> Just Equals
+    "=" -> Just Equals
+    "join" -> Just Join
+    "split" -> Just Split
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
@@ -103,10 +105,10 @@ evalBuiltin ctx@(Context globals locals) builtin values =
       pure Nil
     Plus -> do
       evaledValues <- traverse (eval ctx) values
-      intArgs <- for evaledValues $ \arg ->
+      intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
             case arg of
               Int' i -> pure i
-              _ -> err "Argument to + not an integer"
+              _ -> typeErr ix "+" "integer"
       pure $ Int' $ sum intArgs
     Def -> 
       case values of
@@ -115,20 +117,20 @@ evalBuiltin ctx@(Context globals locals) builtin values =
           modifyIORef globals $ \glob ->
             M.insert name evaledVal glob
           pure Nil
-        [_, _] -> err "First argument to def not a symbol"
-        _ -> err "Wrong number of arguments to def"
+        [_, _] -> typeErr 1 "def" "symbol"
+        _ -> arityErr "def"
     Fn -> evalFn False values
     Macro -> evalFn True values
     Quote -> 
       case values of
         [value] -> quote ctx value
-        _ -> err "Wrong number of arguments to '"
+        _ -> arityErr "'"
     Eval ->
       case values of
         [value] -> do
           evaledValue <- eval ctx value
           eval ctx evaledValue
-        _ -> err "Wrong number of arguments to eval"
+        _ -> arityErr "eval"
     Cons ->
       case values of
         [val, listArg] -> do
@@ -136,24 +138,24 @@ evalBuiltin ctx@(Context globals locals) builtin values =
           evaledList <- eval ctx listArg
           case evaledList of
             List list -> pure $ List $ evaledVal : list
-            _ -> err "Second argument to cons not a list"
-        _ -> err "Wrong number of arguments to cons"
+            _ -> typeErr 2 "cons" "list"
+        _ -> arityErr "cons"
     Head ->
       case values of
         [val] -> do
           evaledList <- eval ctx val
           case evaledList of
             List (head : _) -> pure head
-            _ -> err "First argument to head not a list"
-        _ -> err "Wrong number of arguments to head"
+            _ -> typeErr 1 "head" "list"
+        _ -> arityErr "head"
     Tail ->
       case values of
         [val] -> do
           evaledList <- eval ctx val
           case evaledList of
             List (_ : tail) -> pure $ List tail
-            _ -> err "First argument to tail not a list"
-        _ -> err "Wrong number of arguments to tail"
+            _ -> typeErr 1 "tail" "list"
+        _ -> arityErr "tail"
     If ->
       case values of
         [condition, then', else'] -> do
@@ -162,14 +164,36 @@ evalBuiltin ctx@(Context globals locals) builtin values =
             Bool' False -> eval ctx else'
             Nil -> eval ctx else'
             _ -> eval ctx then'
-        _ -> err "Wrong number of arguments to if"
+        _ -> arityErr "if"
     Equals -> 
       case values of
         [lhs, rhs] -> do
           evaledLhs <- eval ctx lhs
           evaledRhs <- eval ctx rhs
           pure $ Bool' $ evaledLhs == evaledRhs
-        _ -> err "Wrong number of arguments to ="
+        _ -> arityErr "="
+    Join ->
+      case values of
+        [List list] -> do
+          stringArgs <- for list $ \arg ->
+            case arg of
+              String' s -> pure s
+              v -> err $ "List in argument to join contained: " <> printVal v <> ". Only strings are allowed"
+          pure $ String' $ join stringArgs
+        [_] -> typeErr 1 "join" "list"
+        _ -> arityErr "join"
+    Split ->
+      case values of
+        [String' s] -> do
+          pure $ List $ (\c -> String' [c]) <$> s
+        [_] -> typeErr 1 "split" "string"
+        _ -> arityErr "split"
+
+typeErr :: Int -> String -> String -> IO a
+typeErr argNo fnName typeName = err $ "Argument " <> show argNo <> " to " <> fnName <> " not of type " <> typeName
+
+arityErr :: String -> IO a
+arityErr fnName = err $ "Wrong number of arguments to " <> fnName
 
 evalFn :: Bool -> [Value] -> IO Value
 evalFn macro values =

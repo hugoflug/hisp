@@ -9,6 +9,8 @@
 - `'`
 - `~`?
 - `eval`
+- `error`
+- `apply`
 
 ### I/O
 - `print`
@@ -34,4 +36,6 @@
 - `head`
 - `tail`
 
-
+### strings
+- `join`
+- `split`

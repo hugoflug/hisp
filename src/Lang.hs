@@ -23,5 +23,7 @@ data Builtin =
   Head |
   Tail |
   If |
-  Equals
+  Equals |
+  Join |
+  Split
   deriving (Show, Eq)
