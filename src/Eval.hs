@@ -6,30 +6,30 @@ import qualified Data.Map as M
 import Data.Map ((!?), union)
 import Data.Maybe (fromMaybe)
 import Data.IORef (IORef, readIORef, modifyIORef)
+import Data.Foldable (traverse_)
 import Data.Traversable (for)
 import Lang
+import Parse (parse)
+import System.FilePath (takeDirectory)
 
 -- Closures?
 -- Line numbers at errs
 -- Be more liberal with accepted symbols
 -- CLI
 -- Better REPL (repline?)
--- Remove Function constructor?
 -- Improve exceptions
--- Refactor
 -- Automatically load core.hisp
--- It should be possible to override built-ins
--- Built-ins can not be referred to without calling them
 -- Think about macroexpand
 -- Could fn be a macro that just evals args?
 
 data Context = Context {
   globals :: IORef (M.Map String Value),
-  locals :: M.Map String Value
+  locals :: M.Map String Value,
+  currentDir :: String
 }
 
 eval :: Context -> Value -> IO Value
-eval ctx@(Context globals locals) val =
+eval ctx@(Context globals locals _) val =
   case val of
     Symbol name -> do
       case locals !? name of
@@ -94,10 +94,11 @@ parseBuiltin name =
     "=" -> Just Equals
     "join" -> Just Join
     "split" -> Just Split
+    "import" -> Just Import
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
-evalBuiltin ctx@(Context globals locals) builtin values =
+evalBuiltin ctx@(Context globals locals currDir) builtin values =
   case builtin of
     Print -> do
       evaledValues <- traverse (eval ctx) values
@@ -110,7 +111,7 @@ evalBuiltin ctx@(Context globals locals) builtin values =
               Int' i -> pure i
               _ -> typeErr ix "+" "integer"
       pure $ Int' $ sum intArgs
-    Def -> 
+    Def ->
       case values of
         [Symbol name, val] -> do
           evaledVal <- eval ctx val
@@ -121,7 +122,7 @@ evalBuiltin ctx@(Context globals locals) builtin values =
         _ -> arityErr "def"
     Fn -> evalFn False values
     Macro -> evalFn True values
-    Quote -> 
+    Quote ->
       case values of
         [value] -> quote ctx value
         _ -> arityErr "'"
@@ -165,7 +166,7 @@ evalBuiltin ctx@(Context globals locals) builtin values =
             Nil -> eval ctx else'
             _ -> eval ctx then'
         _ -> arityErr "if"
-    Equals -> 
+    Equals ->
       case values of
         [lhs, rhs] -> do
           evaledLhs <- eval ctx lhs
@@ -174,20 +175,41 @@ evalBuiltin ctx@(Context globals locals) builtin values =
         _ -> arityErr "="
     Join ->
       case values of
-        [List list] -> do
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          list <- case evaledArg of
+            List l -> pure l
+            _ -> typeErr 1 "join" "list"
           stringArgs <- for list $ \arg ->
             case arg of
               String' s -> pure s
               v -> err $ "List in argument to join contained: " <> printVal v <> ". Only strings are allowed"
           pure $ String' $ join stringArgs
-        [_] -> typeErr 1 "join" "list"
         _ -> arityErr "join"
     Split ->
       case values of
-        [String' s] -> do
-          pure $ List $ (\c -> String' [c]) <$> s
-        [_] -> typeErr 1 "split" "string"
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          case arg of
+            String' s -> pure $ List $ (\c -> String' [c]) <$> s
+            _ -> typeErr 1 "split" "string"
         _ -> arityErr "split"
+    Import ->
+      case values of
+        [arg] -> do
+          case arg of
+            String' mod -> do
+              let filename = currDir <> "/" <> mod <> ".hisp"
+              program <- readFile filename
+              case parse filename program of
+                Left e -> err $ show e
+                Right exprs -> do
+                  let newCurrDir = takeDirectory filename
+                  traverse_ (eval (Context globals M.empty newCurrDir)) exprs
+                  pure Nil
+            _ -> typeErr 1 "import" "string"
+        _ -> arityErr "import"
+
 
 typeErr :: Int -> String -> String -> IO a
 typeErr argNo fnName typeName = err $ "Argument " <> show argNo <> " to " <> fnName <> " not of type " <> typeName
@@ -209,7 +231,7 @@ evalFn macro values =
 
 -- TODO: write in hisp instead?
 quote :: Context -> Value -> IO Value
-quote ctx@(Context globals locals) val =
+quote ctx@(Context globals locals _) val =
   case val of
     List [Symbol "~", v] -> eval ctx v
     List vals -> do

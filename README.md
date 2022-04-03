@@ -11,6 +11,7 @@
 - `eval`
 - `error`
 - `apply`
+- `import`
 
 ### I/O
 - `print`

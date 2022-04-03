@@ -25,5 +25,6 @@ data Builtin =
   If |
   Equals |
   Join |
-  Split
+  Split |
+  Import
   deriving (Show, Eq)
