@@ -12,9 +12,11 @@
 - `error`
 - `apply`
 - `import`
+- `type`
 
 ### I/O
 - `print`
+- `readfile`
 
 ### arithmetic
 - `+`

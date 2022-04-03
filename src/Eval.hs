@@ -123,6 +123,7 @@ parseBuiltin name =
     "tail" -> Just Tail
     "if" -> Just If
     "=" -> Just Equals
+    ">" -> Just Gt
     "join" -> Just Join
     "split" -> Just Split
     "import" -> Just Import
@@ -205,6 +206,16 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
           evaledRhs <- eval ctx rhs
           pure $ Bool' $ evaledLhs `eq` evaledRhs
         _ -> arityErr stack "="
+    Gt ->
+      case values of
+        [lhs, rhs] -> do
+          evaledLhs <- eval ctx lhs
+          evaledRhs <- eval ctx rhs
+          case (evaledLhs, evaledRhs) of
+            (Int' l, Int' r) -> pure $ Bool' $ l > r
+            (Int' r, x) -> typeErr stack 2 ">" "int" x
+            (x, _) -> typeErr stack 1 ">" "int" x
+        _ -> arityErr stack ">"
     Join ->
       case values of
         [arg] -> do

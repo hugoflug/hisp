@@ -32,6 +32,7 @@ data Builtin =
   Tail |
   If |
   Equals |
+  Gt |
   Join |
   Split |
   Import
