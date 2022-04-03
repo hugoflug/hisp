@@ -37,10 +37,11 @@ TokenParser
 expr = list <|> nil <|> boolExpr <|> symbolExpr <|> int <|> strExpr
 
 list = do
+  pos <- getPosition
   m_symbol "("
   exprs <- many expr
   m_symbol ")"
-  pure $ List exprs
+  pure $ List exprs pos
 
 int = Int' <$> m_integer
 
@@ -60,7 +61,10 @@ nil = do
   m_reserved "nil"
   pure Nil
 
-symbolExpr = Symbol <$> m_identifier
+symbolExpr = do
+  pos <- getPosition
+  sym <- m_identifier
+  pure $ Symbol sym pos
 
 program = do
   m_whiteSpace
