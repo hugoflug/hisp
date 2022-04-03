@@ -10,8 +10,8 @@ import Data.Foldable (traverse_)
 import Data.Traversable (for)
 import Lang
 import Parse (parse)
-import System.FilePath (takeDirectory)
-import Text.Parsec (SourcePos)
+import System.FilePath (takeDirectory, takeFileName)
+import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
 -- Closures?
 -- Line numbers at errs
@@ -26,13 +26,20 @@ import Text.Parsec (SourcePos)
 data Context = Context {
   globals :: IORef (M.Map String Value),
   locals :: M.Map String Value,
-  currentDir :: String
+  currentDir :: String,
+  stack :: [StackEntry]
 }
 
+data StackEntry = StackEntry {
+  fnName :: String,
+  pos :: SourcePos
+} deriving (Eq, Show)
+
 eval :: Context -> Value -> IO Value
-eval ctx@(Context globals locals _) val =
+eval ctx@(Context globals locals _ stack) val =
   case val of
     Symbol name pos -> do
+      let newStack = (StackEntry name pos):stack
       case locals !? name of
         Just v -> pure v
         Nothing -> do
@@ -41,28 +48,45 @@ eval ctx@(Context globals locals _) val =
             Just v -> pure v
             Nothing -> case parseBuiltin name of
               Just builtin -> pure $ Builtin' builtin
-              Nothing -> errPos pos $ "No such symbol: " <> name
+              Nothing -> do
+                errPos newStack $ "No such symbol [" <> name <> "]"
 
     List (head : tail) pos -> do
+      let 
+        fnName = 
+          case head of 
+            (Symbol name _) -> name
+            _ -> "(anon)"
+      let newStack = (StackEntry fnName pos):stack
       evaledHead <- eval ctx head
       case evaledHead of
         Builtin' name -> 
-          evalBuiltin ctx pos name tail
-        Function args body macro -> do
+          evalBuiltin ctx{stack = newStack} name tail
+        Function args body captures isMacro -> do
           when (length args /= length tail) $
-            errPos pos $ "Wrong number of arguments"
-          fnTail <- if macro then
+            errPos newStack $ "Wrong number of arguments"
+          fnTail <- if isMacro then
               pure tail
             else
               traverse (eval ctx) tail
-          let fnLocals = M.fromList $ zip args fnTail
-          eval ctx{locals = fnLocals} body
-        x -> errPos pos $ "No function at head of list, was: [" <> printVal x <> "]"
+          let fnLocals = M.fromList (zip args fnTail) `union` captures
+          result <- eval ctx{locals = fnLocals, stack = newStack} body
+          if isMacro then
+            let fnLocals = M.fromList (zip args fnTail) `union` locals in
+              eval ctx{locals = fnLocals, stack = newStack} result
+          else
+            pure result
+
+        x -> errPos newStack $ "No function at head of list, was: [" <> printVal x <> "]"
 
     v -> pure v
 
-fmtSourcePos :: SourcePos -> String
-fmtSourcePos = show
+fmtStack :: [StackEntry] -> String
+fmtStack = intercalate "\n" . fmap fmtStackEntry
+
+fmtStackEntry :: StackEntry -> String
+fmtStackEntry (StackEntry fnName pos) = 
+  fnName <> " @ " <> takeFileName (sourceName pos) <> ":" <> show (sourceLine pos) <> ":" <> show (sourceColumn pos) 
 
 printVal :: Value -> String 
 printVal v = case v of
@@ -72,17 +96,17 @@ printVal v = case v of
   Bool' False -> "false"
   Symbol name _ -> name
   List vals _ -> "(" <> (printVals " " vals) <> ")"
-  Function args val macro -> "function" -- printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
+  Function args val _ macro -> "function" -- printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
   Nil -> "nil"
 
 printVals :: String -> [Value] -> String
 printVals separator = intercalate separator . fmap printVal
 
 err :: String -> IO a
-err = ioError . userError
+err = error
 
-errPos :: SourcePos -> String -> IO a
-errPos pos msg = err $ msg <> " at " <> fmtSourcePos pos 
+errPos :: [StackEntry] -> String -> IO a
+errPos stack msg = err $ "Error: " <> msg <> " at: \n" <> fmtStack stack 
 
 parseBuiltin :: String -> Maybe Builtin
 parseBuiltin name =
@@ -104,8 +128,8 @@ parseBuiltin name =
     "import" -> Just Import
     _ -> Nothing
 
-evalBuiltin :: Context -> SourcePos -> Builtin -> [Value] -> IO Value
-evalBuiltin ctx@(Context globals locals currDir) pos builtin values =
+evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
+evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
   case builtin of
     Print -> do
       evaledValues <- traverse (eval ctx) values
@@ -116,7 +140,7 @@ evalBuiltin ctx@(Context globals locals currDir) pos builtin values =
       intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
             case arg of
               Int' i -> pure i
-              _ -> typeErr pos ix "+" "integer"
+              x -> typeErr stack ix "+" "integer" x
       pure $ Int' $ sum intArgs
     Def ->
       case values of
@@ -125,45 +149,46 @@ evalBuiltin ctx@(Context globals locals currDir) pos builtin values =
           modifyIORef globals $ \glob ->
             M.insert name evaledVal glob
           pure Nil
-        [_, _] -> typeErr pos 1 "def" "symbol"
-        _ -> arityErr pos "def"
-    Fn -> evalFn pos False values
-    Macro -> evalFn pos True values
+        [x, _] -> typeErr stack 1 "def" "symbol" x
+        _ -> arityErr stack "def"
+    Fn -> evalFn stack False locals values
+    Macro -> evalFn stack True locals values
     Quote ->
       case values of
         [value] -> quote ctx value
-        _ -> arityErr pos "'"
+        _ -> arityErr stack "'"
     Eval ->
       case values of
         [value] -> do
           evaledValue <- eval ctx value
           eval ctx evaledValue
-        _ -> arityErr pos "eval"
+        _ -> arityErr stack "eval"
     Cons ->
       case values of
         [val, listArg] -> do
           evaledVal <- eval ctx val
           evaledList <- eval ctx listArg
           case evaledList of
-            List list _ -> pure $ List (evaledVal : list) pos -- TODO: correct pos?
-            _ -> typeErr pos 2 "cons" "list"
-        _ -> arityErr pos "cons"
+            List list _ -> pure $ List (evaledVal : list) (pos (head stack)) -- TODO: correct pos?
+            x -> typeErr stack 2 "cons" "list" x
+        _ -> arityErr stack "cons"
     Head ->
       case values of
         [val] -> do
           evaledList <- eval ctx val
           case evaledList of
             List (head : _) _ -> pure head
-            _ -> typeErr pos 1 "head" "list"
-        _ -> arityErr pos "head"
+            List [] _ -> errPos stack "Head called on empty list"
+            x -> typeErr stack 1 "head" "list" x
+        _ -> arityErr stack "head"
     Tail ->
       case values of
         [val] -> do
           evaledList <- eval ctx val
           case evaledList of
-            List (_ : tail) _ -> pure $ List tail pos -- TODO: correct pos?
-            _ -> typeErr pos 1 "tail" "list"
-        _ -> arityErr pos "tail"
+            List (_ : tail) _ -> pure $ List tail (pos (head stack))
+            x -> typeErr stack 1 "tail" "list" x
+        _ -> arityErr stack "tail"
     If ->
       case values of
         [condition, then', else'] -> do
@@ -172,35 +197,35 @@ evalBuiltin ctx@(Context globals locals currDir) pos builtin values =
             Bool' False -> eval ctx else'
             Nil -> eval ctx else'
             _ -> eval ctx then'
-        _ -> arityErr pos "if"
+        _ -> arityErr stack "if"
     Equals ->
       case values of
         [lhs, rhs] -> do
           evaledLhs <- eval ctx lhs
           evaledRhs <- eval ctx rhs
-          pure $ Bool' $ evaledLhs == evaledRhs
-        _ -> arityErr pos "="
+          pure $ Bool' $ evaledLhs `eq` evaledRhs
+        _ -> arityErr stack "="
     Join ->
       case values of
         [arg] -> do
           evaledArg <- eval ctx arg
           list <- case evaledArg of
             List l _ -> pure l
-            _ -> typeErr pos 1 "join" "list"
+            x -> typeErr stack 1 "join" "list" x
           stringArgs <- for list $ \arg ->
             case arg of
               String' s -> pure s
               v -> err $ "List in argument to join contained: " <> printVal v <> ". Only strings are allowed"
           pure $ String' $ join stringArgs
-        _ -> arityErr pos "join"
+        _ -> arityErr stack "join"
     Split ->
       case values of
         [arg] -> do
           evaledArg <- eval ctx arg
           case arg of
-            String' s -> pure $ List ((\c -> String' [c]) <$> s) pos
-            _ -> typeErr pos 1 "split" "string"
-        _ -> arityErr pos "split"
+            String' s -> pure $ List ((\c -> String' [c]) <$> s) (pos (head stack))
+            x -> typeErr stack 1 "split" "string" x
+        _ -> arityErr stack "split"
     Import ->
       case values of
         [arg] -> do
@@ -212,39 +237,44 @@ evalBuiltin ctx@(Context globals locals currDir) pos builtin values =
                 Left e -> err $ show e
                 Right exprs -> do
                   let newCurrDir = takeDirectory filename
-                  traverse_ (eval (Context globals M.empty newCurrDir)) exprs
+                  traverse_ (eval (Context globals M.empty newCurrDir [])) exprs
                   pure Nil
-            _ -> typeErr pos 1 "import" "string"
-        _ -> arityErr pos "import"
+            x -> typeErr stack 1 "import" "string" x
+        _ -> arityErr stack "import"
 
+eq :: Value -> Value -> Bool
+eq v1 v2 = case (v1, v2) of
+  (List values1 _, List values2 _) -> values1 == values2
+  (Symbol sym1 _, Symbol sym2 _) -> sym1 == sym2
+  x -> v1 == v2
 
-typeErr :: SourcePos -> Int -> String -> String -> IO a
-typeErr pos argNo fnName typeName = errPos pos $ "Argument " <> show argNo <> " to " <> fnName <> " not of type " <> typeName
+typeErr :: [StackEntry] -> Int -> String -> String -> Value -> IO a
+typeErr stack argNo fnName expected actual = errPos stack $ "Argument " <> show argNo <> " to " <> fnName <> " not of type " <> expected <> " (was " <> printVal actual <> ")"
 
-arityErr :: SourcePos -> String -> IO a
-arityErr pos fnName = errPos pos $ "Wrong number of arguments to " <> fnName
+arityErr :: [StackEntry] -> String -> IO a
+arityErr stack fnName = errPos stack $ "Wrong number of arguments to " <> fnName
 
-evalFn :: SourcePos -> Bool -> [Value] -> IO Value
-evalFn pos macro values =
+evalFn :: [StackEntry] -> Bool -> M.Map String Value -> [Value] -> IO Value
+evalFn stack macro captures values =
   case values of
     [List args _, body] -> do
       symArgs <- for args $ \arg ->
         case arg of
           Symbol name _ -> pure name
-          x -> errPos pos $ "Function argument not a symbol, was: [" <> printVal x  <> "]"
-      pure $ Function symArgs body macro
-    [x, _] -> errPos pos $ "First argument to fn not a list, was: [" <> printVal x <> "]"
-    _ -> errPos pos $ "Wrong number of arguments to fn"
+          x -> errPos stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"
+      pure $ Function symArgs body captures macro
+    [x, _] -> errPos stack $ "First argument to fn not a list, was: [" <> printVal x <> "]"
+    _ -> errPos stack $ "Wrong number of arguments to fn"
 
 -- TODO: write in hisp instead?
 quote :: Context -> Value -> IO Value
-quote ctx@(Context globals locals _) val =
+quote ctx@(Context globals locals _ stack) val =
   case val of
     List [Symbol "~" _, v] _ -> eval ctx v
     List vals pos -> do
       qVals <- traverse (quote ctx) vals
       pure $ List qVals pos
-    Function args body macro -> do
+    Function args body captures macro -> do
       qBody <- quote ctx body
-      pure $ Function args qBody macro
+      pure $ Function args qBody captures macro
     v -> pure v

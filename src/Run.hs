@@ -6,7 +6,7 @@ import Parse
 import Eval
 import Lang
 
-import Control.Exception (handle, displayException, SomeException)
+import Control.Exception (handle, displayException, SomeException, ErrorCall(..))
 import Control.Monad (forever, void)
 import Data.Foldable (traverse_)
 import qualified Data.Map as M
@@ -18,20 +18,21 @@ import System.Directory (makeAbsolute, getCurrentDirectory)
 runFile :: FilePath -> IO ()
 runFile filename = do
   program <- readFile filename
-  currDir <- makeAbsolute $ takeDirectory filename
-  values <- run' currDir program
+  absFilename <- makeAbsolute filename
+  let currDir = takeDirectory absFilename
+  values <- run' absFilename currDir program
   putStrLn $ printVals "\n" values
 
-run' :: String -> String -> IO [Value]
-run' currDir program = do
+run' :: String -> String -> String -> IO [Value]
+run' filename currDir program = do
   globals <- newIORef M.empty
-  run currDir globals program
+  run filename currDir globals program
 
-run :: String -> IORef (M.Map String Value) -> String -> IO [Value]
-run currDir globals program = 
-  case parse "" program of
+run :: String -> String -> IORef (M.Map String Value) -> String -> IO [Value]
+run filename currDir globals program = 
+  case parse filename program of
     Left err -> error $ show err
-    Right exprs -> traverse (eval (Context globals M.empty currDir)) exprs
+    Right exprs -> traverse (eval (Context globals M.empty currDir [])) exprs
 
 repl :: IO ()
 repl = do
@@ -41,6 +42,6 @@ repl = do
     hFlush stdout
     line <- getLine
     workDir <- getCurrentDirectory
-    handle @SomeException (putStrLn . show) $ do 
-      values <- run workDir globals line
+    handle (\(ErrorCall s) -> putStrLn s) $ do 
+      values <- run "repl" workDir globals line
       putStrLn $ printVals "\n" values

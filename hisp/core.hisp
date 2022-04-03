@@ -1,10 +1,10 @@
 (def defmacro 
   (macro (name args body) 
-    (eval (' (def (~ name) (macro (~ args) (~ body)))))))
+    (' (def (~ name) (macro (~ args) (~ body))))))
 
 (defmacro defn
   (name args body) 
-  (eval (' (def (~ name) (fn (~ args) (~ body)))) ))
+  (' (def (~ name) (fn (~ args) (~ body)))) )
 
 (defn map
   (f list)
@@ -22,12 +22,18 @@
       (cons (head list) (filter f (tail list)))
       (filter f (tail list)))))
 
+(defn reduce
+  (f val list)
+  (if (= list ())
+    val
+    (reduce f (f val (head list)) (tail list))))
+
 (defmacro let
   (bindings body)
-    (eval (cons
+    (cons
       (' (fn
         (~ (map head bindings))
         (~ body)))
       (map
         (fn (bnd) (head (tail bnd)))
-        bindings))))
+        bindings)))
