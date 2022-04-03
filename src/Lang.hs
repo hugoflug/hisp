@@ -35,5 +35,7 @@ data Builtin =
   Gt |
   Join |
   Split |
-  Import
+  Str | 
+  Import |
+  Error
   deriving (Show, Eq)

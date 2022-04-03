@@ -37,3 +37,9 @@
       (map
         (fn (bnd) (head (tail bnd)))
         bindings)))
+
+(defn assert-equal
+  (a b)
+  (if (= a b)
+    nil
+    (error "not equal")))

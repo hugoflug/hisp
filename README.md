@@ -10,26 +10,26 @@
 - `~`?
 - `eval`
 - `error`
-- `apply`
+- `apply` *
 - `import`
-- `type`
+- `type` *
 
 ### I/O
 - `print`
-- `readfile`
+- `readfile` *
 
 ### arithmetic
 - `+`
-- `-`
-- `*`
-- `/`
+- `-` *
+- `*` *
+- `/` *
 
 ### comparison
 - `>`
 - `=`
 
 ### logic
-- `nand`
+- `nand` *
 
 ### control flow
 - `if`
@@ -40,5 +40,5 @@
 - `tail`
 
 ### strings
-- `join`
+- `str`
 - `split`

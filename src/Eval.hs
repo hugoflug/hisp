@@ -1,6 +1,6 @@
 module Eval where
 
-import Control.Monad (when, join)
+import Control.Monad (when)
 import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Map ((!?), union)
@@ -124,9 +124,10 @@ parseBuiltin name =
     "if" -> Just If
     "=" -> Just Equals
     ">" -> Just Gt
-    "join" -> Just Join
     "split" -> Just Split
+    "str" -> Just Str
     "import" -> Just Import
+    "error" -> Just Error
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
@@ -216,19 +217,14 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             (Int' r, x) -> typeErr stack 2 ">" "int" x
             (x, _) -> typeErr stack 1 ">" "int" x
         _ -> arityErr stack ">"
-    Join ->
-      case values of
-        [arg] -> do
-          evaledArg <- eval ctx arg
-          list <- case evaledArg of
-            List l _ -> pure l
-            x -> typeErr stack 1 "join" "list" x
-          stringArgs <- for list $ \arg ->
-            case arg of
-              String' s -> pure s
-              v -> err $ "List in argument to join contained: " <> printVal v <> ". Only strings are allowed"
-          pure $ String' $ join stringArgs
-        _ -> arityErr stack "join"
+    Str -> do
+      evaledValues <- traverse (eval ctx) values
+      let 
+        toString val = 
+          case val of
+            String' s -> s
+            x -> printVal x
+      pure $ String' $ intercalate "" $ toString <$> evaledValues
     Split ->
       case values of
         [arg] -> do
@@ -240,7 +236,8 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
     Import ->
       case values of
         [arg] -> do
-          case arg of
+          evaledArg <- eval ctx arg
+          case evaledArg of
             String' mod -> do
               let filename = currDir <> "/" <> mod <> ".hisp"
               program <- readFile filename
@@ -252,6 +249,15 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
                   pure Nil
             x -> typeErr stack 1 "import" "string" x
         _ -> arityErr stack "import"
+    Error ->
+      case values of
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          case evaledArg of
+            String' msg -> do
+              errPos stack $ msg
+            x -> typeErr stack 1 "error" "string" x
+        _ -> arityErr stack "error"
 
 eq :: Value -> Value -> Bool
 eq v1 v2 = case (v1, v2) of
