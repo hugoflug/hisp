@@ -21,6 +21,7 @@ data Value =
 
 data Builtin =
   Print |
+  Readfile |
   Plus |
   Def |
   Fn |

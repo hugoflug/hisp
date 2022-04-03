@@ -128,6 +128,7 @@ parseBuiltin name =
     "str" -> Just Str
     "import" -> Just Import
     "error" -> Just Error
+    "read-file" -> Just Readfile
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
@@ -137,6 +138,16 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
       evaledValues <- traverse (eval ctx) values
       putStrLn $ printVals " " evaledValues
       pure Nil
+    Readfile -> do
+      case values of
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          case evaledArg of
+            String' filename -> do
+              contents <- readFile filename
+              pure $ String' contents
+            x -> typeErr stack 1 "read-file" "string" x
+        _ -> arityErr stack "read-file"
     Plus -> do
       evaledValues <- traverse (eval ctx) values
       intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->

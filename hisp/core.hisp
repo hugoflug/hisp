@@ -42,4 +42,4 @@
   (a b)
   (if (= a b)
     nil
-    (error "not equal")))
+    (error (str a " was not equal to " b))))
