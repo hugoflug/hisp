@@ -43,3 +43,26 @@
   (if (= a b)
     nil
     (error (str a " was not equal to " b))))
+
+(defn reverse' (l reverted)
+  (if (= l ())
+    reverted
+    (reverse' (tail l) (cons (head l) reverted))))
+
+(defn reverse 
+  (l)
+  (reverse' l ()))
+
+(defn split-on'
+  (s c splits curr)
+  (if (= s ())
+    (reverse (cons (apply str curr) splits))
+    (if (= (head s) c)
+      (split-on' (tail s) c (cons (apply str curr) splits) (' ()))
+      (split-on' (tail s) c splits (cons (head s) curr)))))
+
+(defn split-on
+  (s c)
+  (split-on' (split s) c () ()))
+
+(assert-equal (split-on "a,b,c" ",") (' ("a" "b" "c")))

@@ -28,6 +28,7 @@ data Builtin =
   Macro |
   Quote |
   Eval |
+  Apply | -- Could this be a macro?
   Cons |
   Head |
   Tail |

@@ -94,9 +94,10 @@ printVal v = case v of
   String' i -> show i
   Bool' True -> "true"
   Bool' False -> "false"
-  Symbol name _ -> name
+  Symbol name _ -> "#" <> name
   List vals _ -> "(" <> (printVals " " vals) <> ")"
   Function args val _ macro -> "function" -- printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
+  Builtin' builtin -> show builtin
   Nil -> "nil"
 
 printVals :: String -> [Value] -> String
@@ -118,6 +119,7 @@ parseBuiltin name =
     "macro" -> Just Macro
     "'" -> Just Quote
     "eval" -> Just Eval
+    "apply" -> Just Apply
     "cons" -> Just Cons
     "head" -> Just Head
     "tail" -> Just Tail
@@ -176,13 +178,22 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
           evaledValue <- eval ctx value
           eval ctx evaledValue
         _ -> arityErr stack "eval"
+    Apply ->
+      case values of
+        [fn, list] -> do
+          evaledList <- eval ctx list
+          evaledList' <- case evaledList of
+            (List ls _) -> pure ls
+            x -> typeErr stack 2 "apply" "list" x
+          eval ctx (List (fn:evaledList') (pos (head stack)))
+        _ -> arityErr stack "apply"
     Cons ->
       case values of
         [val, listArg] -> do
           evaledVal <- eval ctx val
           evaledList <- eval ctx listArg
           case evaledList of
-            List list _ -> pure $ List (evaledVal : list) (pos (head stack)) -- TODO: correct pos?
+            List list _ -> pure $ List (evaledVal : list) (pos (head stack))
             x -> typeErr stack 2 "cons" "list" x
         _ -> arityErr stack "cons"
     Head ->
@@ -240,7 +251,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
       case values of
         [arg] -> do
           evaledArg <- eval ctx arg
-          case arg of
+          case evaledArg of
             String' s -> pure $ List ((\c -> String' [c]) <$> s) (pos (head stack))
             x -> typeErr stack 1 "split" "string" x
         _ -> arityErr stack "split"

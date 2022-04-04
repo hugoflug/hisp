@@ -10,7 +10,7 @@
 - `~`?
 - `eval`
 - `error`
-- `apply` *
+- `apply` ?
 - `import`
 - `type` *
 
