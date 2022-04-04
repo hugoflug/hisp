@@ -13,15 +13,11 @@ import Parse (parse)
 import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
--- Closures?
--- Line numbers at errs
 -- Be more liberal with accepted symbols
 -- CLI
 -- Better REPL (repline?)
--- Improve exceptions
--- Automatically load core.hisp
--- Think about macroexpand
--- Could fn be a macro that just evals args?
+-- Macros evaluated at load time
+-- Destructuring?
 
 data Context = Context {
   globals :: IORef (M.Map String Value),
@@ -114,6 +110,7 @@ parseBuiltin name =
   case name of
     "print" -> Just Print
     "+" -> Just Plus
+    "*" -> Just Mult
     "def" -> Just Def
     "fn" -> Just Fn
     "macro" -> Just Macro
@@ -157,6 +154,13 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
               Int' i -> pure i
               x -> typeErr stack ix "+" "integer" x
       pure $ Int' $ sum intArgs
+    Mult -> do
+      evaledValues <- traverse (eval ctx) values
+      intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
+            case arg of
+              Int' i -> pure i
+              x -> typeErr stack ix "+" "integer" x
+      pure $ Int' $ product intArgs
     Def ->
       case values of
         [Symbol name _, val] -> do

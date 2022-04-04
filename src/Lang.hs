@@ -23,6 +23,7 @@ data Builtin =
   Print |
   Readfile |
   Plus |
+  Mult |
   Def |
   Fn |
   Macro |
