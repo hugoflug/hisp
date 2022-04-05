@@ -6,6 +6,12 @@
   (name args body) 
   (' (def (~ name) (fn (~ args) (~ body)))) )
 
+(defn assert-equal
+  (a b)
+  (if (= a b)
+    nil
+    (error (str a " was not equal to " b))))
+
 (defn map
   (f list)
   (if (= list ())
@@ -27,6 +33,7 @@
   (if (= list ())
     val
     (reduce f (f val (head list)) (tail list))))
+(assert-equal (reduce + 7 (' (1 2 3))) 13)
 
 (defmacro let
   (bindings body)
@@ -37,12 +44,6 @@
       (map
         (fn (bnd) (head (tail bnd)))
         bindings)))
-
-(defn assert-equal
-  (a b)
-  (if (= a b)
-    nil
-    (error (str a " was not equal to " b))))
 
 (defn reverse' (l reverted)
   (if (= l ())
@@ -56,14 +57,15 @@
 (defn split-on'
   (s c splits curr)
   (if (= s ())
-    (reverse (cons (apply str curr) splits))
+    (reverse (cons (apply str (reverse curr)) splits))
     (if (= (head s) c)
-      (split-on' (tail s) c (cons (apply str curr) splits) (' ()))
+      (split-on' (tail s) c (cons (apply str (reverse curr)) splits) (' ()))
       (split-on' (tail s) c splits (cons (head s) curr)))))
 (defn split-on
   (s c)
   (split-on' (split s) c () ()))
 (assert-equal (split-on "a,b,c" ",") (' ("a" "b" "c")))
+(assert-equal (split-on "ax,bx,cx" ",") (' ("ax" "bx" "cx")))
 
 (defn parse-digit
   (s)
