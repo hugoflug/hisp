@@ -11,6 +11,7 @@ data Value =
   List [Value] SourcePos |
   Function {
     args :: [String],
+    varArg :: Maybe String,
     body :: Value,
     captures :: M.Map String Value,
     isMacro :: Bool

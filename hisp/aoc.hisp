@@ -10,13 +10,13 @@
         (let (
           (c (head acc))
           (prev (head (tail acc)))) 
-            (' (
-              (~ (if (> v prev)
+            (list
+              (if (> v prev)
                 (+ c 1)
-                c))
-              (~ v)))))))
-    (head (reduce count (' (0 (~ intmax))) depths))))
-(assert-equal (count-increases (' (199 200 208 210 200 207 240 269 260 263))) 7)
+                c)
+              v)))))
+    (head (reduce count (list 0 intmax) depths))))
+(assert-equal (count-increases (list 199 200 208 210 200 207 240 269 260 263)) 7)
 
 (defn aoc1-1
   (input)

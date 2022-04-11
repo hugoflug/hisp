@@ -95,3 +95,6 @@
 (assert-equal (parse-int "901") 901)
 (assert-equal (parse-int "0") 0)
 
+(defn list (& l) l)
+(assert-equal (list 1 2 3) (' (1 2 3)))
+(assert-equal (list) (' ()))

@@ -17,8 +17,8 @@ def =
     {
       commentLine = ";"
     , caseSensitive = True
-    , identStart = asciiLetter <|> char '-' <|> char '+' <|> char '~' <|> char '\'' <|> char '=' <|> char '>' <|> char '*'
-    , identLetter = asciiAlphaNum <|> char '-' <|> char '+' <|> char '~' <|> char '\'' <|> char '=' <|> char '>' <|> char '*'
+    , identStart = asciiLetter <|> char '-' <|> char '+' <|> char '~' <|> char '\'' <|> char '=' <|> char '>' <|> char '*' <|> char '&'
+    , identLetter = asciiAlphaNum <|> char '-' <|> char '+' <|> char '~' <|> char '\'' <|> char '=' <|> char '>' <|> char '*' <|> char '&'
     , opStart = oneOf []
     , opLetter = oneOf []
     , reservedNames = ["true", "false", "nil"]

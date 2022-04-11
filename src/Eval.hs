@@ -4,7 +4,7 @@ import Control.Monad (when)
 import Data.List (intercalate)
 import qualified Data.Map as M
 import Data.Map ((!?), union)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.IORef (IORef, readIORef, modifyIORef)
 import Data.Foldable (traverse_)
 import Data.Traversable (for)
@@ -13,6 +13,8 @@ import Parse (parse)
 import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
+-- varargs
+-- Execute multiple side-effectful functions after each other
 -- Be more liberal with accepted symbols
 -- CLI
 -- Better REPL (repline?)
@@ -30,6 +32,13 @@ data StackEntry = StackEntry {
   fnName :: String,
   pos :: SourcePos
 } deriving (Eq, Show)
+
+zipRest :: [a] -> [b] -> ([(a,b)], [a], [b])
+zipRest (a:as) (b:bs) = 
+  let (tuples, r1, r2) = zipRest as bs in
+    ((a, b):tuples, r1, r2)
+zipRest []     bs    = ([], [], bs)
+zipRest as    []     = ([], as, [])
 
 eval :: Context -> Value -> IO Value
 eval ctx@(Context globals locals _ stack) val =
@@ -58,17 +67,25 @@ eval ctx@(Context globals locals _ stack) val =
       case evaledHead of
         Builtin' name -> 
           evalBuiltin ctx{stack = newStack} name tail
-        Function args body captures isMacro -> do
-          when (length args /= length tail) $
-            errPos newStack $ "Wrong number of arguments"
+        Function args varArg body captures isMacro -> do
+          when (length tail < length args) $ errPos newStack "Too few arguments"
+          when (length tail > length args && isNothing varArg) $ errPos newStack "Too many arguments"
+
           fnTail <- if isMacro then
               pure tail
             else
               traverse (eval ctx) tail
-          let fnLocals = M.fromList (zip args fnTail) `union` captures
+
+          argMap <- M.fromList <$> case zipRest args fnTail of
+            (zipped, _, extras) -> do
+              case varArg of
+                Just varg -> pure $ zipped <> [(varg, List extras pos)] -- TODO: don't set source position
+                Nothing -> pure zipped
+
+          let fnLocals = argMap `union` captures
           result <- eval ctx{locals = fnLocals, stack = newStack} body
           if isMacro then
-            let fnLocals = M.fromList (zip args fnTail) `union` locals in
+            let fnLocals = argMap `union` locals in
               eval ctx{locals = fnLocals, stack = newStack} result
           else
             pure result
@@ -92,7 +109,7 @@ printVal v = case v of
   Bool' False -> "false"
   Symbol name _ -> "#" <> name
   List vals _ -> "(" <> (printVals " " vals) <> ")"
-  Function args val _ macro -> "function" -- printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
+  Function args varArg val _ macro -> "function" -- printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
   Builtin' builtin -> show builtin
   Nil -> "nil"
 
@@ -297,15 +314,30 @@ typeErr stack argNo fnName expected actual = errPos stack $ "Argument " <> show 
 arityErr :: [StackEntry] -> String -> IO a
 arityErr stack fnName = errPos stack $ "Wrong number of arguments to " <> fnName
 
+last2                    :: [a] -> Maybe (a, a)
+last2 [x1, x2]           =  Just (x1, x2)
+last2 (_:xs)             =  last2 xs
+last2 []                 =  Nothing
+
+dropLast :: Int -> [a] -> [a]
+dropLast n = reverse . drop n . reverse
+
 evalFn :: [StackEntry] -> Bool -> M.Map String Value -> [Value] -> IO Value
 evalFn stack macro captures values =
   case values of
     [List args _, body] -> do
-      symArgs <- for args $ \arg ->
+      maybeVarArg <- case last2 args of
+          Just (Symbol "&" _, lastArg) ->
+            case lastArg of
+              Symbol name _ -> pure $ Just name
+              x -> errPos stack $ "Variadic function argument not a symbol, was: [" <> printVal x  <> "]"  
+          _ -> pure Nothing
+      let nonVarArgs = if isJust maybeVarArg then dropLast 2 args else args
+      symArgs <- for nonVarArgs $ \arg ->
         case arg of
           Symbol name _ -> pure name
-          x -> errPos stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"
-      pure $ Function symArgs body captures macro
+          x -> errPos stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"      
+      pure $ Function symArgs maybeVarArg body captures macro 
     [x, _] -> errPos stack $ "First argument to fn not a list, was: [" <> printVal x <> "]"
     _ -> errPos stack $ "Wrong number of arguments to fn"
 
@@ -317,7 +349,7 @@ quote ctx@(Context globals locals _ stack) val =
     List vals pos -> do
       qVals <- traverse (quote ctx) vals
       pure $ List qVals pos
-    Function args body captures macro -> do
+    Function args varArg body captures macro -> do
       qBody <- quote ctx body
-      pure $ Function args qBody captures macro
+      pure $ Function args varArg qBody captures macro
     v -> pure v
