@@ -1,7 +1,7 @@
 module Eval where
 
 import Control.Monad (when)
-import Data.List (intercalate)
+import Data.List (intercalate, foldl')
 import qualified Data.Map as M
 import Data.Map ((!?), union)
 import Data.Maybe (fromMaybe, isJust, isNothing)
@@ -13,8 +13,9 @@ import Parse (parse)
 import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
--- varargs
 -- Execute multiple side-effectful functions after each other
+-- nand built-in
+-- Refer to previous lets inside a let binding
 -- Be more liberal with accepted symbols
 -- CLI
 -- Better REPL (repline?)
@@ -127,6 +128,7 @@ parseBuiltin name =
   case name of
     "print" -> Just Print
     "+" -> Just Plus
+    "-" -> Just Minus
     "*" -> Just Mult
     "def" -> Just Def
     "fn" -> Just Fn
@@ -164,6 +166,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
               pure $ String' contents
             x -> typeErr stack 1 "read-file" "string" x
         _ -> arityErr stack "read-file"
+    -- TODO: properly handle no args for arithmetic ops
     Plus -> do
       evaledValues <- traverse (eval ctx) values
       intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
@@ -178,6 +181,13 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
               Int' i -> pure i
               x -> typeErr stack ix "+" "integer" x
       pure $ Int' $ product intArgs
+    Minus -> do
+      evaledValues <- traverse (eval ctx) values
+      intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
+            case arg of
+              Int' i -> pure i
+              x -> typeErr stack ix "-" "integer" x
+      pure $ Int' $ foldl' (-) (head intArgs) (tail intArgs)
     Def ->
       case values of
         [Symbol name _, val] -> do

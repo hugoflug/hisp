@@ -24,3 +24,28 @@
 (assert-equal
   (aoc1-1 (read-file "AOC1.txt"))
   1722)
+
+(defn count-increases-2
+  (depths)
+  (let
+    ((count 
+      (fn (acc v)
+        (let (
+          (c (head acc))
+          (prev (head (tail acc))))
+          (let
+            ((curr (snoc v (drop 1 prev))))
+            (list
+              (if (> (reduce + (head curr) (tail curr)) (reduce + (head prev) (tail prev)))
+                (+ c 1)
+                c)
+              curr))))))
+    (head (reduce count (list 0 (take 3 depths)) (drop 3 depths)))))
+(assert-equal (count-increases-2 (list 199 200 208 210 200 207 240 269 260 263)) 5)
+
+(defn aoc1-2
+  (input)
+  (count-increases-2 (map parse-int (split-on input "\n"))))
+(assert-equal
+  (aoc1-2 (read-file "AOC1.txt"))
+  1748)

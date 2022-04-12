@@ -25,6 +25,7 @@ data Builtin =
   Readfile |
   Plus |
   Mult |
+  Minus |
   Def |
   Fn |
   Macro |

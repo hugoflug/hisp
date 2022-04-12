@@ -12,6 +12,10 @@
     nil
     (error (str a " was not equal to " b))))
 
+(defn list (& l) l)
+(assert-equal (list 1 2 3) (' (1 2 3)))
+(assert-equal (list) (' ()))
+
 (defn map
   (f list)
   (if (= list ())
@@ -33,7 +37,7 @@
   (if (= list ())
     val
     (reduce f (f val (head list)) (tail list))))
-(assert-equal (reduce + 7 (' (1 2 3))) 13)
+(assert-equal (reduce + 7 (list 1 2 3)) 13)
 
 (defmacro let
   (bindings body)
@@ -52,7 +56,7 @@
 (defn reverse 
   (l)
   (reverse' l ()))
-(assert-equal (reverse (' (1 2 3))) (' (3 2 1)))
+(assert-equal (reverse (list 1 2 3)) (list 3 2 1))
 
 (defn split-on'
   (s c splits curr)
@@ -64,8 +68,8 @@
 (defn split-on
   (s c)
   (split-on' (split s) c () ()))
-(assert-equal (split-on "a,b,c" ",") (' ("a" "b" "c")))
-(assert-equal (split-on "ax,bx,cx" ",") (' ("ax" "bx" "cx")))
+(assert-equal (split-on "a,b,c" ",") (list "a" "b" "c"))
+(assert-equal (split-on "ax,bx,cx" ",") (list "ax" "bx" "cx"))
 
 (defn parse-digit
   (s)
@@ -95,6 +99,32 @@
 (assert-equal (parse-int "901") 901)
 (assert-equal (parse-int "0") 0)
 
-(defn list (& l) l)
-(assert-equal (list 1 2 3) (' (1 2 3)))
-(assert-equal (list) (' ()))
+(defn take 
+  (n l)
+  (if (= n 0)
+    ()
+    (if (= l ())
+      ()
+      (cons (head l) (take (- n 1) (tail l))))))
+(assert-equal (take 3 (list 1 2 3 4 5)) (list 1 2 3))
+(assert-equal (take 3 (list 1 2)) (list 1 2))
+(assert-equal (take 3 (list)) (list))
+
+(defn drop 
+  (n l)
+  (if (= n 0)
+    l
+    (if (= l ())
+      ()
+      (drop (- n 1) (tail l)))))
+(assert-equal (drop 3 (list 1 2 3 4 5)) (list 4 5))
+(assert-equal (drop 3 (list 1 2)) (list))
+(assert-equal (drop 3 (list)) (list))
+
+(defn snoc 
+  (elem l)
+  (if (= l ())
+    (list elem)
+    (cons (head l) (snoc elem (tail l)))))
+(assert-equal (snoc 3 (list 1 2)) (list 1 2 3))
+(assert-equal (snoc 3 (list)) (list 3))
