@@ -26,6 +26,7 @@ data Builtin =
   Plus |
   Mult |
   Minus |
+  Nand |
   Def |
   Fn |
   Macro |

@@ -130,6 +130,7 @@ parseBuiltin name =
     "+" -> Just Plus
     "-" -> Just Minus
     "*" -> Just Mult
+    "nand" -> Just Nand
     "def" -> Just Def
     "fn" -> Just Fn
     "macro" -> Just Macro
@@ -188,6 +189,13 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
               Int' i -> pure i
               x -> typeErr stack ix "-" "integer" x
       pure $ Int' $ foldl' (-) (head intArgs) (tail intArgs)
+    Nand -> do
+      evaledValues <- traverse (eval ctx) values
+      boolArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
+            case arg of
+              Bool' i -> pure i
+              x -> typeErr stack ix "-" "bool" x
+      pure $ Bool' $ not $ and boolArgs
     Def ->
       case values of
         [Symbol name _, val] -> do

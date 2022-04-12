@@ -49,6 +49,14 @@
         (fn (bnd) (head (tail bnd)))
         bindings)))
 
+(defn or
+  (a b)
+  (nand (nand a a) (nand b b)))
+(assert-equal (or false false) false)
+(assert-equal (or false true) true)
+(assert-equal (or true false) true)
+(assert-equal (or true true) true)
+
 (defn reverse' (l reverted)
   (if (= l ())
     reverted
