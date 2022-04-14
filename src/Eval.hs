@@ -14,7 +14,6 @@ import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
 -- Refer to previous lets inside a let binding
--- Be more liberal with accepted symbols
 -- CLI
 -- Better REPL (repline?)
 -- Macros evaluated at load time
@@ -153,6 +152,7 @@ parseBuiltin name =
     "import" -> Just Import
     "error" -> Just Error
     "read-file" -> Just Readfile
+    "type" -> Just Type
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
@@ -208,7 +208,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
         [fn, list] -> do
           evaledList <- eval ctx list
           evaledList' <- case evaledList of
-            (List ls _) -> pure ls
+            List ls _ -> pure ls
             x -> typeErr stack 2 "apply" "list" x
           eval ctx (List (fn:evaledList') (pos (head stack)))
         _ -> arityErr stack "apply"
@@ -305,8 +305,21 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
               err stack $ msg
             x -> typeErr stack 1 "error" "string" x
         _ -> arityErr stack "error"
+    Type ->
+      case args of 
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          pure $ String' $ case evaledArg of
+            String' _ -> "string"
+            List _ _ -> "list"
+            Int' _ -> "int"
+            Bool' _ -> "bool"
+            Symbol _ _ -> "symbol"
+            Nil -> "nil"
+            Builtin' _ -> "function"
+            Function _ _ _ _ _ -> "function"
+        _ -> arityErr stack "type"
 
--- TODO: properly handle no args for arithmetic ops
 evalArithmetic ::  Context -> (Integer -> Integer -> Integer) -> String -> [Value] -> IO Value
 evalArithmetic ctx op name args = do
   evaledValues <- traverse (eval ctx) args

@@ -137,3 +137,9 @@
     (cons (head l) (snoc elem (tail l)))))
 (assert-equal (snoc 3 (list 1 2)) (list 1 2 3))
 (assert-equal (snoc 3 (list)) (list 3))
+
+(assert-equal (type "a") "string")
+(assert-equal (type 56) "int")
+(assert-equal (type (list 1 2 3)) "list")
+(assert-equal (type cons) "function")
+(assert-equal (type head) "function")

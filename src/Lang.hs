@@ -42,5 +42,6 @@ data Builtin =
   Split |
   Str | 
   Import |
-  Error
+  Error |
+  Type
   deriving (Show, Eq)
