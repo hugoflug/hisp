@@ -7,21 +7,21 @@
 - `fn`
 - `macro`
 - `'`
-- `~`?
+- `~`
 - `eval`
 - `error`
-- `apply` ?
+- `apply`
 - `import`
 - `type` *
 
 ### I/O
 - `print`
-- `readfile` *
+- `read-file`
 
 ### arithmetic
 - `+`
-- `-` *
-- `*` *
+- `-`
+- `*`
 - `/` *
 
 ### comparison
@@ -29,7 +29,7 @@
 - `=`
 
 ### logic
-- `nand` *
+- `nand`
 
 ### control flow
 - `if`

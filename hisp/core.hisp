@@ -16,6 +16,9 @@
 (assert-equal (list 1 2 3) (' (1 2 3)))
 (assert-equal (list) (' ()))
 
+(defn do (& l) nil)
+(assert-equal (do 1 2 3) nil)
+
 (defn map
   (f list)
   (if (= list ())
@@ -109,11 +112,9 @@
 
 (defn take 
   (n l)
-  (if (= n 0)
-    ()
-    (if (= l ())
+  (if (or (= n 0) (= l ()))
       ()
-      (cons (head l) (take (- n 1) (tail l))))))
+      (cons (head l) (take (- n 1) (tail l)))))
 (assert-equal (take 3 (list 1 2 3 4 5)) (list 1 2 3))
 (assert-equal (take 3 (list 1 2)) (list 1 2))
 (assert-equal (take 3 (list)) (list))

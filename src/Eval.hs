@@ -13,8 +13,6 @@ import Parse (parse)
 import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
--- Execute multiple side-effectful functions after each other
--- nand built-in
 -- Refer to previous lets inside a let binding
 -- Be more liberal with accepted symbols
 -- CLI
@@ -55,7 +53,7 @@ eval ctx@(Context globals locals _ stack) val =
             Nothing -> case parseBuiltin name of
               Just builtin -> pure $ Builtin' builtin
               Nothing -> do
-                errPos newStack $ "No such symbol [" <> name <> "]"
+                err newStack $ "No such symbol [" <> name <> "]"
 
     List (head : tail) pos -> do
       let 
@@ -69,8 +67,8 @@ eval ctx@(Context globals locals _ stack) val =
         Builtin' name -> 
           evalBuiltin ctx{stack = newStack} name tail
         Function args varArg body captures isMacro -> do
-          when (length tail < length args) $ errPos newStack "Too few arguments"
-          when (length tail > length args && isNothing varArg) $ errPos newStack "Too many arguments"
+          when (length tail < length args) $ err newStack "Too few arguments"
+          when (length tail > length args && isNothing varArg) $ err newStack "Too many arguments"
 
           fnTail <- if isMacro then
               pure tail
@@ -91,7 +89,7 @@ eval ctx@(Context globals locals _ stack) val =
           else
             pure result
 
-        x -> errPos newStack $ "No function at head of list, was: [" <> printVal x <> "]"
+        x -> err newStack $ "No function at head of list, was: [" <> printVal x <> "]"
 
     v -> pure v
 
@@ -110,18 +108,18 @@ printVal v = case v of
   Bool' False -> "false"
   Symbol name _ -> "#" <> name
   List vals _ -> "(" <> (printVals " " vals) <> ")"
-  Function args varArg val _ macro -> "function" -- printVal $ List [Symbol (if macro then "macro" else "fn"), List (Symbol <$> args), val]
-  Builtin' builtin -> show builtin
+  Function args varArg val _ macro -> "function" -- TODO: print it nicer
+  Builtin' builtin -> show builtin -- TODO: print builtins like they are written
   Nil -> "nil"
 
 printVals :: String -> [Value] -> String
 printVals separator = intercalate separator . fmap printVal
 
-err :: String -> IO a
-err = error
+errNoStack :: String -> IO a
+errNoStack = error
 
-errPos :: [StackEntry] -> String -> IO a
-errPos stack msg = err $ "Error: " <> msg <> " at: \n" <> fmtStack stack 
+err :: [StackEntry] -> String -> IO a
+err stack msg = errNoStack $ "Error: " <> msg <> " at: \n" <> fmtStack stack 
 
 parseBuiltin :: String -> Maybe Builtin
 parseBuiltin name =
@@ -151,14 +149,14 @@ parseBuiltin name =
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
-evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
+evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
   case builtin of
     Print -> do
-      evaledValues <- traverse (eval ctx) values
+      evaledValues <- traverse (eval ctx) args
       putStrLn $ printVals " " evaledValues
       pure Nil
     Readfile -> do
-      case values of
+      case args of
         [arg] -> do
           evaledArg <- eval ctx arg
           case evaledArg of
@@ -167,37 +165,18 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
               pure $ String' contents
             x -> typeErr stack 1 "read-file" "string" x
         _ -> arityErr stack "read-file"
-    -- TODO: properly handle no args for arithmetic ops
-    Plus -> do
-      evaledValues <- traverse (eval ctx) values
-      intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
-            case arg of
-              Int' i -> pure i
-              x -> typeErr stack ix "+" "integer" x
-      pure $ Int' $ sum intArgs
-    Mult -> do
-      evaledValues <- traverse (eval ctx) values
-      intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
-            case arg of
-              Int' i -> pure i
-              x -> typeErr stack ix "+" "integer" x
-      pure $ Int' $ product intArgs
-    Minus -> do
-      evaledValues <- traverse (eval ctx) values
-      intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
-            case arg of
-              Int' i -> pure i
-              x -> typeErr stack ix "-" "integer" x
-      pure $ Int' $ foldl' (-) (head intArgs) (tail intArgs)
+    Plus -> evalArithmetic ctx (+) "+" args
+    Mult -> evalArithmetic ctx (*) "*" args
+    Minus -> evalArithmetic ctx (-) "-" args
     Nand -> do
-      evaledValues <- traverse (eval ctx) values
+      evaledValues <- traverse (eval ctx) args
       boolArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
             case arg of
               Bool' i -> pure i
               x -> typeErr stack ix "-" "bool" x
       pure $ Bool' $ not $ and boolArgs
     Def ->
-      case values of
+      case args of
         [Symbol name _, val] -> do
           evaledVal <- eval ctx val
           modifyIORef globals $ \glob ->
@@ -205,20 +184,20 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
           pure Nil
         [x, _] -> typeErr stack 1 "def" "symbol" x
         _ -> arityErr stack "def"
-    Fn -> evalFn stack False locals values
-    Macro -> evalFn stack True locals values
+    Fn -> evalFn stack False locals args
+    Macro -> evalFn stack True locals args
     Quote ->
-      case values of
+      case args of
         [value] -> quote ctx value
         _ -> arityErr stack "'"
     Eval ->
-      case values of
+      case args of
         [value] -> do
           evaledValue <- eval ctx value
           eval ctx evaledValue
         _ -> arityErr stack "eval"
     Apply ->
-      case values of
+      case args of
         [fn, list] -> do
           evaledList <- eval ctx list
           evaledList' <- case evaledList of
@@ -227,7 +206,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
           eval ctx (List (fn:evaledList') (pos (head stack)))
         _ -> arityErr stack "apply"
     Cons ->
-      case values of
+      case args of
         [val, listArg] -> do
           evaledVal <- eval ctx val
           evaledList <- eval ctx listArg
@@ -236,16 +215,16 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             x -> typeErr stack 2 "cons" "list" x
         _ -> arityErr stack "cons"
     Head ->
-      case values of
+      case args of
         [val] -> do
           evaledList <- eval ctx val
           case evaledList of
             List (head : _) _ -> pure head
-            List [] _ -> errPos stack "Head called on empty list"
+            List [] _ -> err stack "head called on empty list"
             x -> typeErr stack 1 "head" "list" x
         _ -> arityErr stack "head"
     Tail ->
-      case values of
+      case args of
         [val] -> do
           evaledList <- eval ctx val
           case evaledList of
@@ -253,7 +232,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             x -> typeErr stack 1 "tail" "list" x
         _ -> arityErr stack "tail"
     If ->
-      case values of
+      case args of
         [condition, then', else'] -> do
           evaledCondition <- eval ctx condition
           case evaledCondition of
@@ -262,14 +241,14 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             _ -> eval ctx then'
         _ -> arityErr stack "if"
     Equals ->
-      case values of
+      case args of
         [lhs, rhs] -> do
           evaledLhs <- eval ctx lhs
           evaledRhs <- eval ctx rhs
           pure $ Bool' $ evaledLhs `eq` evaledRhs
         _ -> arityErr stack "="
     Gt ->
-      case values of
+      case args of
         [lhs, rhs] -> do
           evaledLhs <- eval ctx lhs
           evaledRhs <- eval ctx rhs
@@ -279,7 +258,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             (x, _) -> typeErr stack 1 ">" "int" x
         _ -> arityErr stack ">"
     Str -> do
-      evaledValues <- traverse (eval ctx) values
+      evaledValues <- traverse (eval ctx) args
       let 
         toString val = 
           case val of
@@ -287,7 +266,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             x -> printVal x
       pure $ String' $ intercalate "" $ toString <$> evaledValues
     Split ->
-      case values of
+      case args of
         [arg] -> do
           evaledArg <- eval ctx arg
           case evaledArg of
@@ -295,7 +274,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             x -> typeErr stack 1 "split" "string" x
         _ -> arityErr stack "split"
     Import ->
-      case values of
+      case args of
         [arg] -> do
           evaledArg <- eval ctx arg
           case evaledArg of
@@ -303,7 +282,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
               let filename = currDir <> "/" <> mod <> ".hisp"
               program <- readFile filename
               case parse filename program of
-                Left e -> err $ show e
+                Left e -> errNoStack $ show e
                 Right exprs -> do
                   let newCurrDir = takeDirectory filename
                   traverse_ (eval (Context globals M.empty newCurrDir [])) exprs
@@ -311,14 +290,26 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin values =
             x -> typeErr stack 1 "import" "string" x
         _ -> arityErr stack "import"
     Error ->
-      case values of
+      case args of
         [arg] -> do
           evaledArg <- eval ctx arg
           case evaledArg of
             String' msg -> do
-              errPos stack $ msg
+              err stack $ msg
             x -> typeErr stack 1 "error" "string" x
         _ -> arityErr stack "error"
+
+-- TODO: properly handle no args for arithmetic ops
+evalArithmetic ::  Context -> (Integer -> Integer -> Integer) -> String -> [Value] -> IO Value
+evalArithmetic ctx op name args = do
+  evaledValues <- traverse (eval ctx) args
+  intArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
+        case arg of
+          Int' i -> pure i
+          x -> typeErr (stack ctx) ix name "integer" x
+  case intArgs of
+    [] -> arityErr (stack ctx) name
+    h : t -> pure $ Int' $ foldl' op (head intArgs) (tail intArgs)
 
 eq :: Value -> Value -> Bool
 eq v1 v2 = case (v1, v2) of
@@ -327,10 +318,11 @@ eq v1 v2 = case (v1, v2) of
   x -> v1 == v2
 
 typeErr :: [StackEntry] -> Int -> String -> String -> Value -> IO a
-typeErr stack argNo fnName expected actual = errPos stack $ "Argument " <> show argNo <> " to " <> fnName <> " not of type " <> expected <> " (was " <> printVal actual <> ")"
+typeErr stack argNo fnName expected actual = 
+  err stack $ "Argument " <> show argNo <> " to " <> fnName <> " not of type " <> expected <> " (was " <> printVal actual <> ")"
 
 arityErr :: [StackEntry] -> String -> IO a
-arityErr stack fnName = errPos stack $ "Wrong number of arguments to " <> fnName
+arityErr stack fnName = err stack $ "Wrong number of arguments to " <> fnName
 
 last2                    :: [a] -> Maybe (a, a)
 last2 [x1, x2]           =  Just (x1, x2)
@@ -348,18 +340,17 @@ evalFn stack macro captures values =
           Just (Symbol "&" _, lastArg) ->
             case lastArg of
               Symbol name _ -> pure $ Just name
-              x -> errPos stack $ "Variadic function argument not a symbol, was: [" <> printVal x  <> "]"  
+              x -> err stack $ "Variadic function argument not a symbol, was: [" <> printVal x  <> "]"  
           _ -> pure Nothing
       let nonVarArgs = if isJust maybeVarArg then dropLast 2 args else args
       symArgs <- for nonVarArgs $ \arg ->
         case arg of
           Symbol name _ -> pure name
-          x -> errPos stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"      
+          x -> err stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"      
       pure $ Function symArgs maybeVarArg body captures macro 
-    [x, _] -> errPos stack $ "First argument to fn not a list, was: [" <> printVal x <> "]"
-    _ -> errPos stack $ "Wrong number of arguments to fn"
+    [x, _] -> err stack $ "First argument to fn not a list, was: [" <> printVal x <> "]"
+    _ -> err stack $ "Wrong number of arguments to fn"
 
--- TODO: write in hisp instead?
 quote :: Context -> Value -> IO Value
 quote ctx@(Context globals locals _ stack) val =
   case val of

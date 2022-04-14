@@ -32,14 +32,13 @@ data Builtin =
   Macro |
   Quote |
   Eval |
-  Apply | -- Could this be a macro?
+  Apply |
   Cons |
   Head |
   Tail |
   If |
   Equals |
   Gt |
-  Join |
   Split |
   Str | 
   Import |
