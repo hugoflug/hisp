@@ -39,21 +39,28 @@ zipRest (a:as) (b:bs) =
 zipRest []     bs    = ([], [], bs)
 zipRest as    []     = ([], as, [])
 
+pushStack :: String -> SourcePos -> [StackEntry] -> [StackEntry]
+pushStack name pos stack = (StackEntry name pos):stack
+
 eval :: Context -> Value -> IO Value
 eval ctx@(Context globals locals _ stack) val =
   case val of
     Symbol name pos -> do
-      let newStack = (StackEntry name pos):stack
+      let newStack = pushStack name pos stack
       case locals !? name of
         Just v -> pure v
         Nothing -> do
           reg <- readIORef globals
           case reg !? name of
             Just v -> pure v
-            Nothing -> case parseBuiltin name of
-              Just builtin -> pure $ Builtin' builtin
-              Nothing -> do
-                err newStack $ "No such symbol [" <> name <> "]"
+            Nothing -> case name of
+              "true" -> pure $ Bool' True
+              "false" -> pure $ Bool' False
+              "nil" -> pure Nil
+              name -> case parseBuiltin name of
+                Just builtin -> pure $ Builtin' builtin
+                Nothing -> do
+                  err newStack $ "No such symbol [" <> name <> "]"
 
     List (head : tail) pos -> do
       let 
@@ -61,7 +68,7 @@ eval ctx@(Context globals locals _ stack) val =
           case head of 
             (Symbol name _) -> name
             _ -> "(anon)"
-      let newStack = (StackEntry fnName pos):stack
+      let newStack = pushStack fnName pos stack
       evaledHead <- eval ctx head
       case evaledHead of
         Builtin' name -> 

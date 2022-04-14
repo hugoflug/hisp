@@ -8,20 +8,12 @@ import Lang (Value (..))
 
 import Data.Char (isAlpha, isAlphaNum, isAscii, isDigit)
 
-asciiAlphaNum = satisfy (\c -> isAlphaNum c && isAscii c)
-
-asciiLetter = satisfy (\c -> isAlpha c && isAscii c)
-
 def =
   emptyDef
     {
       commentLine = ";"
-    , caseSensitive = True
-    , identStart = asciiLetter <|> char '-' <|> char '+' <|> char '~' <|> char '\'' <|> char '=' <|> char '>' <|> char '*' <|> char '&'
-    , identLetter = asciiAlphaNum <|> char '-' <|> char '+' <|> char '~' <|> char '\'' <|> char '=' <|> char '>' <|> char '*' <|> char '&'
-    , opStart = oneOf []
-    , opLetter = oneOf []
-    , reservedNames = ["true", "false", "nil"]
+    , identStart = noneOf "()\"; \t\n12334567890"
+    , identLetter = noneOf "()\"; \t\n"
     }
 
 TokenParser 
@@ -31,10 +23,9 @@ TokenParser
   , stringLiteral = m_stringLit
   , whiteSpace = m_whiteSpace
   , symbol = m_symbol
-  , reserved = m_reserved
   } = makeTokenParser def
 
-expr = list <|> nil <|> boolExpr <|> symbolExpr <|> int <|> strExpr
+expr = list <|> symbolExpr <|> int <|> strExpr
 
 list = do
   pos <- getPosition
@@ -46,20 +37,6 @@ list = do
 int = Int' <$> m_integer
 
 strExpr = String' <$> m_stringLit
-
-boolExpr = trueExpr <|> falseExpr
-
-trueExpr = do
-  m_reserved "true"
-  pure $ Bool' True
-
-falseExpr = do
-  m_reserved "false"
-  pure $ Bool' False
-
-nil = do
-  m_reserved "nil"
-  pure Nil
 
 symbolExpr = do
   pos <- getPosition
