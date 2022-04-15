@@ -82,34 +82,6 @@
 (assert-equal (split-on "a,b,c" ",") (list "a" "b" "c"))
 (assert-equal (split-on "ax,bx,cx" ",") (list "ax" "bx" "cx"))
 
-(defn parse-digit
-  (s)
-  (if (= s "1") 1
-    (if (= s "2") 2
-      (if (= s "3") 3
-        (if (= s "4") 4
-          (if (= s "5") 5
-            (if (= s "6") 6
-              (if (= s "7") 7
-                (if (= s "8") 8
-                  (if (= s "9") 9
-                    (if (= s "0") 0 nil)))))))))))
-(assert-equal (parse-digit "8") 8)
-
-(defn parse-int'
-  (l)
-  (if (= l ())
-    0
-    (+
-      (head l)
-      (* 10 (parse-int' (tail l))))))
-(defn parse-int
-  (s)
-  (parse-int' (reverse (map parse-digit (split s)))))
-(assert-equal (parse-int "873") 873)
-(assert-equal (parse-int "901") 901)
-(assert-equal (parse-int "0") 0)
-
 (defn take 
   (n l)
   (if (or (= n 0) (= l ()))
@@ -138,8 +110,78 @@
 (assert-equal (snoc 3 (list 1 2)) (list 1 2 3))
 (assert-equal (snoc 3 (list)) (list 3))
 
-(assert-equal (type "a") "string")
-(assert-equal (type 56) "int")
-(assert-equal (type (list 1 2 3)) "list")
-(assert-equal (type cons) "function")
-(assert-equal (type head) "function")
+(defmacro expand-macro
+  (fncall)
+  (cons 
+    (set-macro false (eval (head fncall))) 
+    (map (fn (arg) (' (' (~ arg)))) (tail fncall))))
+(assert-equal (expand-macro (let ((a 7) (b 9)) a)) (' ((fn (a b) a) 7 9)))
+(assert-equal (expand-macro (defn foo (a) a)) (' (def foo (fn (a) a))))
+
+(defn split-in-pairs'
+  (l last)
+  (if (= l ())
+    (if (= last nil)
+      ()
+      (error "List was not a length divisible by 2"))
+    (if (= last nil)
+      (split-in-pairs' (tail l) (head l))
+      (cons (list last (head l)) (split-in-pairs' (tail l) nil)))))
+(defn split-in-pairs
+  (l)
+  (split-in-pairs' l nil))
+(assert-equal (split-in-pairs (list 1 2 3 4)) (list (list 1 2) (list 3 4)))
+
+(defn case'
+  (scrutinee case-pairs)
+  (' 
+    (if (= (~ scrutinee) (~ (head (head case-pairs))))
+      (~ (head (tail (head case-pairs))))
+      (~ (if (= (tail case-pairs) ())
+        nil
+        (case' scrutinee (tail case-pairs)))))))
+(defmacro case
+  (scrutinee & cases)
+  (case' scrutinee (split-in-pairs cases)))
+(assert-equal 
+  (expand-macro 
+    (case scrutinee
+      5 "a" 
+      6 "b" 
+      7 "c"))
+  (' 
+    (if (= scrutinee 5) 
+      "a" 
+      (if (= scrutinee 6) 
+        "b" 
+        (if (= scrutinee 7)
+        "c" 
+          (~ nil))))))
+
+(defn parse-digit
+  (s)
+  (case s
+    "0" 0
+    "1" 1
+    "2" 2
+    "3" 3
+    "4" 4
+    "5" 5
+    "6" 6
+    "7" 7
+    "8" 8
+    "9" 9))
+(assert-equal (parse-digit "8") 8)
+(defn parse-int'
+  (l)
+  (if (= l ())
+    0
+    (+
+      (head l)
+      (* 10 (parse-int' (tail l))))))
+(defn parse-int
+  (s)
+  (parse-int' (reverse (map parse-digit (split s)))))
+(assert-equal (parse-int "873") 873)
+(assert-equal (parse-int "901") 901)
+(assert-equal (parse-int "0") 0)

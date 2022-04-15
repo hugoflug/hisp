@@ -112,7 +112,7 @@ printVal v = case v of
   String' i -> show i
   Bool' True -> "true"
   Bool' False -> "false"
-  Symbol name _ -> "#" <> name
+  Symbol name _ ->  name
   List vals _ -> "(" <> (printVals " " vals) <> ")"
   Function args varArg val _ macro -> "function" -- TODO: print it nicer
   Builtin' builtin -> show builtin -- TODO: print builtins like they are written
@@ -202,8 +202,8 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
               case function of
                 fn@(Function _ _ _ _ _) -> 
                   pure fn{isMacro = shouldBeMacro}
-                x -> typeErr stack 2 "set-macro" "bool" x
-            x -> typeErr stack 1 "set-macro" "function" x
+                x -> typeErr stack 2 "set-macro" "function" x
+            x -> typeErr stack 1 "set-macro" "bool" x
         _ -> arityErr stack "set-macro"
     Quote ->
       case args of
@@ -248,6 +248,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
           evaledList <- eval ctx val
           case evaledList of
             List (_ : tail) _ -> pure $ List tail (pos (head stack))
+            List [] _ -> err stack "tail called on empty list"
             x -> typeErr stack 1 "tail" "list" x
         _ -> arityErr stack "tail"
     If ->
@@ -345,9 +346,12 @@ evalArithmetic ctx op name args = do
 
 eq :: Value -> Value -> Bool
 eq v1 v2 = case (v1, v2) of
-  (List values1 _, List values2 _) -> values1 == values2
+  (List values1 _, List values2 _) -> 
+    case zipRest values1 values2 of 
+      (zipped, [], []) -> all (uncurry eq) zipped
+      _ -> False
   (Symbol sym1 _, Symbol sym2 _) -> sym1 == sym2
-  x -> v1 == v2
+  _ -> v1 == v2
 
 typeErr :: [StackEntry] -> Int -> String -> String -> Value -> IO a
 typeErr stack argNo fnName expected actual = 
