@@ -1,6 +1,6 @@
 (def defmacro 
-  (macro (name args body) 
-    (' (def (~ name) (macro (~ args) (~ body))))))
+  (set-macro true (fn (name args body) 
+    (' (def (~ name) (set-macro true (fn (~ args) (~ body))))))))
 
 (defmacro defn
   (name args body) 

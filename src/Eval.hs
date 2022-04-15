@@ -137,7 +137,7 @@ parseBuiltin name =
     "nand" -> Just Nand
     "def" -> Just Def
     "fn" -> Just Fn
-    "macro" -> Just Macro
+    "set-macro" -> Just SetMacro
     "'" -> Just Quote
     "eval" -> Just Eval
     "apply" -> Just Apply
@@ -191,8 +191,20 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
           pure Nil
         [x, _] -> typeErr stack 1 "def" "symbol" x
         _ -> arityErr stack "def"
-    Fn -> evalFn stack False locals args
-    Macro -> evalFn stack True locals args
+    Fn -> evalFn stack locals args
+    SetMacro ->
+      case args of
+        [toggle_, function_] -> do
+          toggle <- eval ctx toggle_
+          case toggle of
+            Bool' shouldBeMacro -> do
+              function <- eval ctx function_
+              case function of
+                fn@(Function _ _ _ _ _) -> 
+                  pure fn{isMacro = shouldBeMacro}
+                x -> typeErr stack 2 "set-macro" "bool" x
+            x -> typeErr stack 1 "set-macro" "function" x
+        _ -> arityErr stack "set-macro"
     Quote ->
       case args of
         [value] -> quote ctx value
@@ -352,8 +364,8 @@ last2 []                 =  Nothing
 dropLast :: Int -> [a] -> [a]
 dropLast n = reverse . drop n . reverse
 
-evalFn :: [StackEntry] -> Bool -> M.Map String Value -> [Value] -> IO Value
-evalFn stack macro captures values =
+evalFn :: [StackEntry] -> M.Map String Value -> [Value] -> IO Value
+evalFn stack captures values =
   case values of
     [List args _, body] -> do
       maybeVarArg <- case last2 args of
@@ -367,7 +379,7 @@ evalFn stack macro captures values =
         case arg of
           Symbol name _ -> pure name
           x -> err stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"      
-      pure $ Function symArgs maybeVarArg body captures macro 
+      pure $ Function symArgs maybeVarArg body captures False 
     [x, _] -> err stack $ "First argument to fn not a list, was: [" <> printVal x <> "]"
     _ -> err stack $ "Wrong number of arguments to fn"
 

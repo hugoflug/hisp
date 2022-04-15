@@ -29,7 +29,7 @@ data Builtin =
   Nand |
   Def |
   Fn |
-  Macro |
+  SetMacro |
   Quote |
   Eval |
   Apply |
