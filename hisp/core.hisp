@@ -196,9 +196,3 @@
 (defn unmacro
   (fn)
   (set-macro false fn))
-
-(defn plus-first-two
-  ((a b))
-  (+ a b))
-
-(plus-first-two (list 1 2))

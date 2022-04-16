@@ -44,11 +44,11 @@ zipRest = zipRestWith (,)
 pushStack :: String -> SourcePos -> [StackEntry] -> [StackEntry]
 pushStack name pos stack = (StackEntry name pos):stack
 
-destructure :: (Binding, Value) -> Either String [(String, Value)]
+destructure :: (Formal, Value) -> Either String [(String, Value)]
 destructure (binding, value) = 
   case binding of
-    SingleBind name -> Right [(name, value)]
-    MultiBind names -> do
+    SingleFormal name -> Right [(name, value)]
+    DestructuringFormal names -> do
       case value of
         List vals _ -> do
           case zipRest names vals of
@@ -77,7 +77,7 @@ eval ctx@(Context globals locals _ stack) val =
                 Nothing -> do
                   err newStack $ "No such symbol [" <> name <> "]"
 
-    List (head : tail) pos -> do
+    List (head : args) pos -> do
       let fnName = case head of 
             (Symbol name _) -> name
             _ -> "(anon)"
@@ -85,28 +85,28 @@ eval ctx@(Context globals locals _ stack) val =
       evaledHead <- eval ctx head
       case evaledHead of
         Builtin' name -> 
-          evalBuiltin ctx{stack = newStack} name tail
-        Function args varArg body captures isMacro -> do
-          when (length tail < length args) $ err newStack "Too few arguments"
-          when (length tail > length args && isNothing varArg) $ err newStack "Too many arguments"
+          evalBuiltin ctx{stack = newStack} name args
+        Function formals varArg body captures isMacro -> do
+          when (length args < length formals) $ err newStack "Too few arguments"
+          when (length args > length formals && isNothing varArg) $ err newStack "Too many arguments"
 
-          fnTail <- if isMacro then
-              pure tail
+          args' <- if isMacro then
+              pure args
             else
-              traverse (eval ctx) tail
+              traverse (eval ctx) args
 
-          let (zippedArgs, _, extras) = zipRest args fnTail
-          argMap1 <- case traverse destructure zippedArgs of
+          let (formalArgPairs, _, extraArgs) = zipRest formals args'
+          argMap <- case traverse destructure formalArgPairs of
             Left errMsg -> err newStack errMsg
             Right destructured -> pure $ M.fromList $ join destructured
-          let argMap = case varArg of
-                Just varg -> M.insert varg (List extras pos) argMap1 -- TODO: don't set source position
-                Nothing -> argMap1
+          let argMap' = case varArg of
+                Just varg -> M.insert varg (List extraArgs pos) argMap -- TODO: don't set source position
+                Nothing -> argMap
 
-          let fnLocals = argMap `union` captures
+          let fnLocals = argMap' `union` captures
           result <- eval ctx{locals = fnLocals, stack = newStack} body
           if isMacro then
-            let fnLocals = argMap `union` locals in
+            let fnLocals = argMap' `union` locals in
               eval ctx{locals = fnLocals, stack = newStack} result
           else
             pure result
@@ -384,30 +384,30 @@ last2 []                 =  Nothing
 dropLast :: Int -> [a] -> [a]
 dropLast n = reverse . drop n . reverse
 
-parseBinding :: Value -> Either String Binding
-parseBinding val =
+parseFormal :: Value -> Either String Formal
+parseFormal val =
   case val of
-    Symbol name _ -> Right $ SingleBind name
+    Symbol name _ -> Right $ SingleFormal name
     List vals _ -> do
        names <- for vals $ \(val) ->
         case val of
           Symbol name _ -> pure name
           x -> Left $ "Value in destructuring list not a symbol, was [" <> printVal x <> "]" 
-       Right $ MultiBind names
+       Right $ DestructuringFormal names
     x -> Left $ "Function argument not a symbol or list, was [" <> printVal x <> "]" 
 
 evalFn :: [StackEntry] -> M.Map String Value -> [Value] -> IO Value
 evalFn stack captures values =
   case values of
-    [List args _, body] -> do
-      maybeVarArg <- case last2 args of
+    [List formals _, body] -> do
+      maybeVarArg <- case last2 formals of
           Just (Symbol "&" _, lastArg) ->
             case lastArg of
               Symbol name _ -> pure $ Just name
               x -> err stack $ "Variadic function argument not a symbol, was: [" <> printVal x  <> "]"  
           _ -> pure Nothing
-      let nonVarArgs = if isJust maybeVarArg then dropLast 2 args else args
-      bindings <- case traverse parseBinding nonVarArgs of
+      let nonVarArgFormals = if isJust maybeVarArg then dropLast 2 formals else formals
+      bindings <- case traverse parseFormal nonVarArgFormals of
         Right bindings -> pure bindings
         Left errMsg -> err stack errMsg   
       pure $ Function bindings maybeVarArg body captures False 
@@ -421,7 +421,7 @@ quote ctx@(Context globals locals _ stack) val =
     List vals pos -> do
       qVals <- traverse (quote ctx) vals
       pure $ List qVals pos
-    Function args varArg body captures macro -> do
+    Function formals varArg body captures macro -> do
       qBody <- quote ctx body
-      pure $ Function args varArg qBody captures macro
+      pure $ Function formals varArg qBody captures macro
     v -> pure v
