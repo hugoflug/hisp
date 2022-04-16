@@ -1,6 +1,6 @@
 module Eval where
 
-import Control.Monad (when)
+import Control.Monad (when, join)
 import Data.List (intercalate, foldl')
 import qualified Data.Map as M
 import Data.Map ((!?), union)
@@ -31,15 +31,31 @@ data StackEntry = StackEntry {
   pos :: SourcePos
 } deriving (Eq, Show)
 
+zipRestWith :: (a -> b -> c) -> [a] -> [b] -> ([c], [a], [b])
+zipRestWith op (a:as) (b:bs) = 
+  let (tuples, r1, r2) = zipRestWith op as bs in
+    ((op a b):tuples, r1, r2)
+zipRestWith _ []    bs    = ([], [], bs)
+zipRestWith _ as    []     = ([], as, [])
+
 zipRest :: [a] -> [b] -> ([(a,b)], [a], [b])
-zipRest (a:as) (b:bs) = 
-  let (tuples, r1, r2) = zipRest as bs in
-    ((a, b):tuples, r1, r2)
-zipRest []     bs    = ([], [], bs)
-zipRest as    []     = ([], as, [])
+zipRest = zipRestWith (,)
 
 pushStack :: String -> SourcePos -> [StackEntry] -> [StackEntry]
 pushStack name pos stack = (StackEntry name pos):stack
+
+destructure :: (Binding, Value) -> Either String [(String, Value)]
+destructure (binding, value) = 
+  case binding of
+    SingleBind name -> Right [(name, value)]
+    MultiBind names -> do
+      case value of
+        List vals _ -> do
+          case zipRest names vals of
+            (_, _:_, _) -> Left "Destructuring failed: Too few values in list"
+            (_, _, _:_) -> Left "Destructuring failed: Too many values in list"
+            (zipped, _, _) -> Right zipped
+        x -> Left $ "Destructuring failed: Value to be destructured not a list, was [" <> printVal x <> "]" 
 
 eval :: Context -> Value -> IO Value
 eval ctx@(Context globals locals _ stack) val =
@@ -62,9 +78,7 @@ eval ctx@(Context globals locals _ stack) val =
                   err newStack $ "No such symbol [" <> name <> "]"
 
     List (head : tail) pos -> do
-      let 
-        fnName = 
-          case head of 
+      let fnName = case head of 
             (Symbol name _) -> name
             _ -> "(anon)"
       let newStack = pushStack fnName pos stack
@@ -81,11 +95,13 @@ eval ctx@(Context globals locals _ stack) val =
             else
               traverse (eval ctx) tail
 
-          argMap <- M.fromList <$> case zipRest args fnTail of
-            (zipped, _, extras) -> do
-              case varArg of
-                Just varg -> pure $ zipped <> [(varg, List extras pos)] -- TODO: don't set source position
-                Nothing -> pure zipped
+          let (zippedArgs, _, extras) = zipRest args fnTail
+          argMap1 <- case traverse destructure zippedArgs of
+            Left errMsg -> err newStack errMsg
+            Right destructured -> pure $ M.fromList $ join destructured
+          let argMap = case varArg of
+                Just varg -> M.insert varg (List extras pos) argMap1 -- TODO: don't set source position
+                Nothing -> argMap1
 
           let fnLocals = argMap `union` captures
           result <- eval ctx{locals = fnLocals, stack = newStack} body
@@ -180,7 +196,7 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
       boolArgs <- for (zip [1..] evaledValues) $ \(ix, arg) ->
             case arg of
               Bool' i -> pure i
-              x -> typeErr stack ix "-" "bool" x
+              x -> typeErr stack ix "nand" "bool" x
       pure $ Bool' $ not $ and boolArgs
     Def ->
       case args of
@@ -368,6 +384,18 @@ last2 []                 =  Nothing
 dropLast :: Int -> [a] -> [a]
 dropLast n = reverse . drop n . reverse
 
+parseBinding :: Value -> Either String Binding
+parseBinding val =
+  case val of
+    Symbol name _ -> Right $ SingleBind name
+    List vals _ -> do
+       names <- for vals $ \(val) ->
+        case val of
+          Symbol name _ -> pure name
+          x -> Left $ "Value in destructuring list not a symbol, was [" <> printVal x <> "]" 
+       Right $ MultiBind names
+    x -> Left $ "Function argument not a symbol or list, was [" <> printVal x <> "]" 
+
 evalFn :: [StackEntry] -> M.Map String Value -> [Value] -> IO Value
 evalFn stack captures values =
   case values of
@@ -379,11 +407,10 @@ evalFn stack captures values =
               x -> err stack $ "Variadic function argument not a symbol, was: [" <> printVal x  <> "]"  
           _ -> pure Nothing
       let nonVarArgs = if isJust maybeVarArg then dropLast 2 args else args
-      symArgs <- for nonVarArgs $ \arg ->
-        case arg of
-          Symbol name _ -> pure name
-          x -> err stack $ "Function argument not a symbol, was: [" <> printVal x  <> "]"      
-      pure $ Function symArgs maybeVarArg body captures False 
+      bindings <- case traverse parseBinding nonVarArgs of
+        Right bindings -> pure bindings
+        Left errMsg -> err stack errMsg   
+      pure $ Function bindings maybeVarArg body captures False 
     [x, _] -> err stack $ "First argument to fn not a list, was: [" <> printVal x <> "]"
     _ -> err stack $ "Wrong number of arguments to fn"
 

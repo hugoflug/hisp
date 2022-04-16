@@ -9,7 +9,7 @@ Hisp has 7 data types:
 - `bool` written like `true`, `false`
 - `string` written like `"hello"`, `""`
 - `list` written like `(1 2 3)`, `(print 5)`, `("foo" "bar")`
-- `nil`, with the ony value `nil`
+- `nil`, with the only value `nil`
 - `symbol`, written like `foo`, `a`
 - `function`, created using the `fn` built-in function
 

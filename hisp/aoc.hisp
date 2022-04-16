@@ -6,15 +6,12 @@
   (depths)
   (let
     (count 
-      (fn (acc v)
-        (let (
-          c (head acc)
-          prev (head (tail acc)))
+      (fn ((c prev) v)
             (list
               (if (> v prev)
                 (+ c 1)
                 c)
-              v))))
+              v)))
     (head (reduce count (list 0 intmax) depths))))
 (assert-equal (count-increases (list 199 200 208 210 200 207 240 269 260 263)) 7)
 
@@ -29,17 +26,14 @@
   (depths)
   (let
     (count 
-      (fn (acc v)
-        (let (
-          c (head acc)
-          prev (head (tail acc)))
+      (fn ((c prev) v)
           (let
             (curr (snoc v (drop 1 prev)))
             (list
               (if (> (reduce + (head curr) (tail curr)) (reduce + (head prev) (tail prev)))
                 (+ c 1)
                 c)
-              curr)))))
+              curr))))
     (head (reduce count (list 0 (take 3 depths)) (drop 3 depths)))))
 (assert-equal (count-increases-2 (list 199 200 208 210 200 207 240 269 260 263)) 5)
 

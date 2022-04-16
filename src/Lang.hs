@@ -10,7 +10,7 @@ data Value =
   Symbol String SourcePos |
   List [Value] SourcePos |
   Function {
-    args :: [String],
+    args :: [Binding],
     varArg :: Maybe String,
     body :: Value,
     captures :: M.Map String Value,
@@ -18,6 +18,11 @@ data Value =
   } |
   Builtin' Builtin |
   Nil
+  deriving (Show, Eq)
+
+data Binding =
+  SingleBind String |
+  MultiBind [String]
   deriving (Show, Eq)
 
 data Builtin =

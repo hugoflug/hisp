@@ -188,3 +188,17 @@
 (assert-equal (parse-int "873") 873)
 (assert-equal (parse-int "901") 901)
 (assert-equal (parse-int "0") 0)
+
+(defn as-macro
+  (fn)
+  (set-macro true fn))
+
+(defn unmacro
+  (fn)
+  (set-macro false fn))
+
+(defn plus-first-two
+  ((a b))
+  (+ a b))
+
+(plus-first-two (list 1 2))
