@@ -10,8 +10,8 @@ data Value =
   Symbol String SourcePos |
   List [Value] SourcePos |
   Function {
-    args :: [Formal],
-    varArg :: Maybe String,
+    formals :: [Formal],
+    variadicFormal :: Maybe String,
     body :: Value,
     captures :: M.Map String Value,
     isMacro :: Bool

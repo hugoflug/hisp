@@ -29,7 +29,7 @@ The `'` built-in function can be used to avoid evaluating values. Inside a `'`, 
 
 # Functions
 
-Functions are created using the `fn` built-in function. The first argument to `fn` is the argument list of the function as a list of symbols.
+Functions are created using the `fn` built-in function. The first argument to `fn` is the formal argument list of the function.
 The second argument is the function body which will be evaluated when the function is called.
 
 For example, this function returns its second argument: 
@@ -54,6 +54,18 @@ will output:
 (3 4)
 ```
 
+## Destructuring
+
+In the call to `fn`, each of the formal arguments to a function can be either a symbol, or a list of symbols. If it's a list of symbols, hisp will destructure any list passed in this argument into the list of symbols. If the lists are not the same length, an error will be thrown.
+
+E.g.
+```
+(def foo (fn (a (b c)) c))
+(foo 5 (' (1 2)))
+```
+
+will return `2`.
+
 ## Macros
 
 Normally, all arguments passed to a function are evaluated before the function body is evaluated.
@@ -62,6 +74,7 @@ Macros are a special kind of function where:
 - After the function returns, its return value will be evaluated, using the lexical scope at the point it is called.
 
 A function can be turned into a macro, and vice versa, using the `set-macro` built-in function.
+
 
 # Built-ins
 

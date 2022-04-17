@@ -16,6 +16,8 @@
 (assert-equal (list 1 2 3) (' (1 2 3)))
 (assert-equal (list) (' ()))
 
+(defn : (& l) l)
+
 (defn do (& l) nil)
 (assert-equal (do 1 2 3) nil)
 
