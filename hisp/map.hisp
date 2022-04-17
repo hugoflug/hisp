@@ -1,0 +1,39 @@
+(import "core")
+
+(defn insert
+  (key value map)
+  (if (empty? map)
+    (: (: key value) () ())
+    (let 
+      ((elem left right) map
+       (key' _) elem)
+        (ifs 
+          (= key key') (: (: key value) left right)
+          (< key key') (: elem (insert key value left) right) 
+          (> key key') (: elem left (insert key value right))
+          (error "insert: Internal error")))))
+
+(defn lookup
+  (key map)
+  (if (empty? map)
+    nil
+    (let 
+      ((elem left right) map
+       (key' value) elem)
+        (ifs
+          (= key key') value
+          (< key key') (lookup key left)
+          (> key key') (lookup key right)
+          (error "lookup: Internal error")))))
+
+(defn mmap'
+  (pairs)
+  (if (empty? pairs)
+    ()
+    (let
+      ((key value) (head pairs))
+        (insert key value (mmap' (tail pairs))))))
+(defn mmap
+  (& args)
+  (mmap' (split-in-pairs args)))
+

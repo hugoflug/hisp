@@ -60,16 +60,16 @@
 
 (defn let'
   (bindings body)
-    (cons
-      (' (fn
-        (~ (map head bindings))
-        (~ body)))
-      (map
-        (fn (bnd) (head (tail bnd)))
-        bindings)))
+    (if (= bindings ())
+      body
+      (cons
+        (' (fn
+          ((~ (head (head bindings))))
+          (~ (let' (tail bindings) body))))
+        (: (head (tail (head bindings)))))))
 (defmacro let
   (bindings body)
-    (let' (split-in-pairs bindings) body))
+    (let' (split-in-pairs bindings) body))    
 
 (defn or
   (a b)
@@ -78,6 +78,14 @@
 (assert-equal (or false true) true)
 (assert-equal (or true false) true)
 (assert-equal (or true true) true)
+
+(defn not
+  (a)
+  (nand a a))
+
+(defn <
+  (a b)
+  (not (> a b)))
 
 (defn reverse' (l reverted)
   (if (= l ())
@@ -129,22 +137,28 @@
 (assert-equal (snoc 3 (list 1 2)) (list 1 2 3))
 (assert-equal (snoc 3 (list)) (list 3))
 
+(defn empty?
+  (l)
+  (= l ()))
+
 (defmacro expand-macro
   (fncall)
   (cons 
     (set-macro false (eval (head fncall))) 
     (map (fn (arg) (' (' (~ arg)))) (tail fncall))))
-(assert-equal (expand-macro (let (a 7 b 9) a)) (' ((fn (a b) a) 7 9)))
+(assert-equal (expand-macro (let (a 7 b 9) a)) (' ((fn (a) ((fn (b) a) 9)) 7)))
 (assert-equal (expand-macro (defn foo (a) a)) (' (def foo (fn (a) a))))
 
 (defn case'
   (scrutinee case-pairs)
-  (' 
-    (if (= (~ scrutinee) (~ (head (head case-pairs))))
-      (~ (head (tail (head case-pairs))))
-      (~ (if (= (tail case-pairs) ())
-        nil
-        (case' scrutinee (tail case-pairs)))))))
+  (let ((candidate result) (head case-pairs)
+        rest (tail case-pairs))
+    (' 
+      (if (= (~ scrutinee) (~ candidate))
+        (~ result)
+        (~ (if (empty? rest)
+          nil
+          (case' scrutinee rest)))))))
 (defmacro case
   (scrutinee & cases)
   (case' scrutinee (split-in-pairs cases)))
@@ -198,3 +212,52 @@
 (defn unmacro
   (fn)
   (set-macro false fn))
+
+(defn last'
+  (l last)
+  (if (empty? l)
+    (if (= nil last)
+      (error "last called on empty list")
+      last)
+    (last' (tail l) (head l))))
+(defn last
+  (l)
+  (last' l nil))
+(assert-equal (last (: 1 2 3)) 3)
+
+(defn init
+  (l)
+  (if (empty? l)
+    (error "init called on empty list")
+    (if (empty? (tail l))
+      ()
+      (cons (head l) (init (tail l))))))
+(assert-equal (init (: 1 2 3)) (: 1 2))
+
+(defn ifs'
+  (ifpairs else)
+  (if (empty? ifpairs)
+    else
+    (let
+      ((cond then) (head ifpairs))
+        (' (if 
+          (~ cond) 
+          (~ then)
+          (~ (ifs' (tail ifpairs) else)))))))
+(defmacro ifs
+  (& vals)
+  (let 
+    (ifpairs (split-in-pairs (init vals))
+     else (last vals))
+      (ifs' ifpairs else)))
+(assert-equal (expand-macro 
+  (ifs
+    (= 1 1) 2
+    (= 2 2) 3
+    5))
+  (' 
+    (if (= 1 1) 
+      2 
+      (if (= 2 2)
+        3 
+        5))))

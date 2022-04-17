@@ -288,10 +288,11 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
         [lhs, rhs] -> do
           evaledLhs <- eval ctx lhs
           evaledRhs <- eval ctx rhs
-          case (evaledLhs, evaledRhs) of
-            (Int' l, Int' r) -> pure $ Bool' $ l > r
-            (Int' r, x) -> typeErr stack 2 ">" "int" x
-            (x, _) -> typeErr stack 1 ">" "int" x
+          pure $ Bool' $ case (evaledLhs, evaledRhs) of
+            (Int' l, Int' r) -> l > r
+            (String' l, String' r) -> l > r
+            -- TODO: support > for lists
+            _ -> False
         _ -> arityErr stack ">"
     Str -> do
       evaledValues <- traverse (eval ctx) args
