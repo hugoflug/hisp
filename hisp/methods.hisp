@@ -1,0 +1,35 @@
+(import "core" ())
+
+
+(defn lookup-impl
+  (args impls)
+  ())
+
+(defn impls-name
+  (name)
+  (new-symbol nil (str "_" (second (eval (' (symbol-name (~ name))))) "_impls")))
+
+(defmacro defmethod
+  (name)
+  (let (impls (impls-name name))
+       (if (eval (' (read (~ impls))))
+         nil
+         (' (do
+           (def (~ impls) ())
+           (defn (~ name) (args &) (lookup-impl args (~ impls))))))))
+(assert-equal (expand-macro (defmethod foo)) 
+  (' 
+    (do 
+      (def _foo_impls ())
+      (defn foo (args &) (lookup-impl args _foo_impls)))))
+
+(defmacro impl 
+  (name args body)
+  (' 
+    (def (~ (impls-name name))
+      (cons (~ (map second args)) (~ (impls-name name))))))
+(defmethod eq)
+(expand-macro (impl eq ((a "int") (b "int")) ()))
+
+;(defmethod eq)
+;(impl eq ((a "int") (b "int")) ())

@@ -89,6 +89,7 @@ A function can be turned into a macro, and vice versa, using the `set-macro` bui
 - `apply` Apply a list of length n to an n-arity function
 - `import` Import another hisp file 
 - `type` Return a string representing the type of the value
+- `ns` Set the current namespace
 
 ## arithmetic
 Perform arithmetic on integers

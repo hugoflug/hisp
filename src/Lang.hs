@@ -17,6 +17,7 @@ data Value =
     isMacro :: Bool
   } |
   Builtin' Builtin |
+  Custom String Value |
   Nil
   deriving (Show, Eq)
 
@@ -60,5 +61,10 @@ data Builtin =
   Import |
   Error |
   Type |
-  Ns
+  New |
+  Unwrap |
+  Ns |
+  NewSymbol |
+  SymbolNameCmd |
+  Read
   deriving (Show, Eq)

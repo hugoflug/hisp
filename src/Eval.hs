@@ -72,31 +72,37 @@ destructure (binding, value) =
             (zipped, _, _) -> Right zipped
         x -> Left $ "Destructuring failed: Value to be destructured not a list, was [" <> printVal x <> "]" 
 
+readSymbol :: Context -> SymbolName -> IO (Maybe Value)
+readSymbol (Context globals locals _ currentNs stack) name = 
+  case locals !? (localName name) of -- TODO: only check in locals if it's not fully-qualified
+    Just v -> pure $ Just v
+    Nothing -> do
+      reg <- readIORef globals
+      currNs <- readIORef currentNs
+      let fullyQualified = 
+            case name of
+              SymbolName Nothing localName -> SymbolName currNs localName
+              s -> s
+      case reg !? fullyQualified `orElse` (reg !? name) of
+        Just (SymbolValue v _) -> pure $ Just v
+        Nothing -> case name of
+          (SymbolName Nothing "true") -> pure $ Just $ Bool' True
+          (SymbolName Nothing "false") -> pure $ Just $ Bool' False
+          (SymbolName Nothing "nil") -> pure $ Just Nil
+          s@(SymbolName Nothing localName) -> case parseBuiltin localName of
+            Just builtin -> pure $ Just $ Builtin' builtin
+            Nothing -> pure Nothing
+          s@(SymbolName _ _ ) -> pure Nothing
+
 eval :: Context -> Value -> IO Value
 eval ctx@(Context globals locals _ currentNs stack) val =
   case val of
     Symbol name pos -> do
       let newStack = pushStack name pos stack
-      case locals !? (localName name) of
-        Just v -> pure v
-        Nothing -> do
-          reg <- readIORef globals
-          currNs <- readIORef currentNs
-          let fullyQualified = 
-                case name of
-                  SymbolName Nothing localName -> SymbolName currNs localName
-                  s -> s
-          case reg !? fullyQualified `orElse` (reg !? name) of
-            Just (SymbolValue v _) -> pure v
-            Nothing -> case name of
-              (SymbolName Nothing "true") -> pure $ Bool' True
-              (SymbolName Nothing "false") -> pure $ Bool' False
-              (SymbolName Nothing "nil") -> pure Nil
-              s@(SymbolName Nothing localName) -> case parseBuiltin localName of
-                Just builtin -> pure $ Builtin' builtin
-                Nothing -> do
-                  err newStack $ "No such symbol [" <> show s <> "]"
-              s@(SymbolName _ _ ) -> err newStack $ "No such symbol [" <> show s <> "]"
+      maybeSymbol <- readSymbol ctx name
+      case maybeSymbol of
+        Just sym -> pure sym
+        Nothing -> err newStack $ "No such symbol [" <> show name <> "]"
 
     List (head : args) pos -> do
       let fnName = case head of 
@@ -149,11 +155,12 @@ printVal v = case v of
   String' i -> show i
   Bool' True -> "true"
   Bool' False -> "false"
-  s@(Symbol _ _) -> show s
+  s@(Symbol (SymbolName namespace localName) _) -> localName --TODO: fix
   List vals _ -> "(" <> (printVals " " vals) <> ")"
   Function args varArg val _ macro -> "function" -- TODO: print it nicer
   Builtin' builtin -> show builtin -- TODO: print builtins like they are written
   Nil -> "nil"
+  Custom name val -> printVal val <> "@" <> name  -- TODO: make print a method
 
 printVals :: String -> [Value] -> String
 printVals separator = intercalate separator . fmap printVal
@@ -173,6 +180,7 @@ parseBuiltin name =
     "*" -> Just Mult
     "nand" -> Just Nand
     "def" -> Just Def
+    "read" -> Just Read
     "fn" -> Just Fn
     "set-macro" -> Just SetMacro
     "'" -> Just Quote
@@ -191,6 +199,10 @@ parseBuiltin name =
     "read-file" -> Just Readfile
     "type" -> Just Type
     "ns" -> Just Ns
+    "new" -> Just New
+    "unwrap" -> Just Unwrap
+    "new-symbol" -> Just NewSymbol
+    "symbol-name" -> Just SymbolNameCmd
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
@@ -231,6 +243,15 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
         [Symbol s@(SymbolName _ _) _, val] -> 
           err stack $ "Namespace not allowed in symbol passed to def: [" <> show s <> "]"
         [x, _] -> typeErr stack 1 "def" "symbol" x
+        _ -> arityErr stack "def"
+    Read ->
+      case args of
+        [Symbol symbolName _] -> do
+          maybeSymbol <- readSymbol ctx symbolName
+          pure $ case maybeSymbol of
+            Just result -> result
+            Nothing -> Nil
+        [x] -> typeErr stack 1 "def" "symbol" x
         _ -> arityErr stack "def"
     Fn -> evalFn stack locals args
     SetMacro ->
@@ -419,7 +440,48 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
             Nil -> "nil"
             Builtin' _ -> "function"
             Function _ _ _ _ _ -> "function"
+            Custom name _ -> name
         _ -> arityErr stack "type"
+    New ->
+      case args of 
+        [name, arg] -> do
+          evaledArg <- eval ctx arg
+          nameStr <- case name of
+            String' n -> pure n
+            x -> typeErr stack 1 "new" "string" x
+          pure $ Custom nameStr evaledArg
+        _ -> arityErr stack "new"
+    Unwrap ->
+      case args of
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          pure $ case evaledArg of
+            Custom _ value -> value
+            other -> other
+    NewSymbol ->
+      case args of
+        [ns, local] -> do
+          evaledNs <- eval ctx ns
+          evaledLocal <- eval ctx local
+          nsStr <- case evaledNs of
+            String' n -> pure $ Just n
+            Nil -> pure Nothing
+            x -> typeErr stack 1 "new-symbol" "string" x
+          localStr <- case evaledLocal of
+            String' n -> pure n
+            x -> typeErr stack 2 "new-symbol" "string" x
+          pure $ Symbol (SymbolName nsStr localStr) (pos (head stack))
+        _ -> arityErr stack "new-symbol"
+    SymbolNameCmd ->
+      case args of
+        [Symbol (SymbolName ns localName) _] -> do
+          let 
+            nsVal = case ns of
+              Nothing -> Nil
+              Just name -> String' name
+          pure $ List [nsVal, String' localName] (pos (head stack))
+        [x] -> typeErr stack 1 "symbol-name" "symbol" x
+        _ -> arityErr stack "symbol-name"
 
 evalArithmetic ::  Context -> (Integer -> Integer -> Integer) -> String -> [Value] -> IO Value
 evalArithmetic ctx op name args = do

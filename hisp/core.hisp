@@ -263,3 +263,8 @@
       (if (= 2 2)
         3 
         5))))
+
+(defn second
+  (l)
+  (head (tail l)))
+(assert-equal (second (: 1 2 3)) 2)
