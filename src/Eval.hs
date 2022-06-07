@@ -157,7 +157,7 @@ printVal v = case v of
   Bool' False -> "false"
   s@(Symbol (SymbolName namespace localName) _) -> localName --TODO: fix
   List vals _ -> "(" <> (printVals " " vals) <> ")"
-  Function args varArg val _ macro -> "function" -- TODO: print it nicer
+  fn@(Function args varArg val _ macro) -> "function" -- TODO: print it nicer
   Builtin' builtin -> show builtin -- TODO: print builtins like they are written
   Nil -> "nil"
   Custom name val -> printVal val <> "@" <> name  -- TODO: make print a method
@@ -242,7 +242,7 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
           pure Nil
         [Symbol s@(SymbolName _ _) _, val] -> 
           err stack $ "Namespace not allowed in symbol passed to def: [" <> show s <> "]"
-        [x, _] -> typeErr stack 1 "def" "symbol" x
+        [x, _] -> typeErr stack 1 "def" "symbol" x -- TODO: try evaluating if it's not a symbol
         _ -> arityErr stack "def"
     Read ->
       case args of

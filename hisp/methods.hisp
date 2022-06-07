@@ -3,33 +3,51 @@
 
 (defn lookup-impl
   (args impls)
-  ())
+  (if (empty? impls)
+    (error "No matching impl found")
+    (let
+      (impl (head impls)
+       impl-types (head impl)
+       impl-fn (second impl))
+      (if (= (map type args) impl-types)
+        (apply impl-fn args)
+        (lookup-impl args (tail impls))))))
 
 (defn impls-name
-  (name)
-  (new-symbol nil (str "_" (second (eval (' (symbol-name (~ name))))) "_impls")))
+  (name) ; todo: use current namespace
+  (new-symbol 
+    nil 
+    (str "_" (second (eval (' (symbol-name (~ name))))) "_impls")))
 
 (defmacro defmethod
   (name)
-  (let (impls (impls-name name))
-       (if (eval (' (read (~ impls))))
+  (let (impls-sym (impls-name name))
+       (if (eval (' (read (~ impls-sym))))
          nil
          (' (do
-           (def (~ impls) ())
-           (defn (~ name) (args &) (lookup-impl args (~ impls))))))))
+           (def (~ impls-sym) ())
+           (defn (~ name) (& args) (lookup-impl args (~ impls-sym))))))))
 (assert-equal (expand-macro (defmethod foo)) 
   (' 
     (do 
       (def _foo_impls ())
-      (defn foo (args &) (lookup-impl args _foo_impls)))))
+      (defn foo (& args) (lookup-impl args _foo_impls)))))
 
 (defmacro impl 
   (name args body)
   (' 
     (def (~ (impls-name name))
-      (cons (~ (map second args)) (~ (impls-name name))))))
-(defmethod eq)
-(expand-macro (impl eq ((a "int") (b "int")) ()))
+      (cons 
+        (cons (~ (cons : (map second args))) (: (fn (~ (map head args)) (~ body))))
+        (~ (impls-name name))))))
 
-;(defmethod eq)
-;(impl eq ((a "int") (b "int")) ())
+(defmethod eq)
+(impl eq ((a "int") (b "int")) (= a b))
+(impl eq ((a "string") (b "string")) false)
+
+(eq 4 4)
+(eq 4 5)
+(eq "a" "a")
+;(eq () 2)
+
+_eq_impls
