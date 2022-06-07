@@ -51,6 +51,14 @@ zipRest = zipRestWith (,)
 pushStack :: SymbolName -> SourcePos -> [StackEntry] -> [StackEntry]
 pushStack name pos stack = (StackEntry name pos):stack
 
+orElse :: Maybe a -> Maybe a -> Maybe a
+x `orElse` y = case x of
+                 Just _  -> x
+                 Nothing -> y
+
+mapPairs :: (Ord k, Ord k2) => (k -> v -> (k2, v2)) -> M.Map k v -> M.Map k2 v2
+mapPairs fn = M.fromList . fmap (uncurry fn) . M.toList
+
 destructure :: (Formal, Value) -> Either String [(String, Value)]
 destructure (binding, value) = 
   case binding of
@@ -78,7 +86,7 @@ eval ctx@(Context globals locals _ currentNs stack) val =
                 case name of
                   SymbolName Nothing localName -> SymbolName currNs localName
                   s -> s
-          case reg !? fullyQualified of
+          case reg !? fullyQualified `orElse` (reg !? name) of
             Just (SymbolValue v _) -> pure v
             Nothing -> case name of
               (SymbolName Nothing "true") -> pure $ Bool' True
@@ -329,7 +337,7 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
         _ -> arityErr stack "split"
     Import ->
       case args of
-        [arg] -> do
+        arg:rest -> do
           evaledArg <- eval ctx arg
           case evaledArg of
             String' mod -> do
@@ -343,10 +351,36 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
                   newGlobals <- newIORef M.empty
                   traverse_ (eval (Context newGlobals M.empty newCurrDir newCurrNs [])) exprs
                   postGlobals <- readIORef newGlobals
-                  let 
-                    globalsToImport = 
+                  let
+                    globalsToImport =
                       M.map (\v -> v{imported = True}) . M.filter (not . imported) $ postGlobals
                   modifyIORef globals $ M.union globalsToImport
+                  case rest of
+                    [List aliases _] -> do
+                      symbolArgs <- for (zip [1..] aliases) $ \(ix, arg) ->
+                        case arg of
+                          Symbol (SymbolName Nothing localName) _ -> pure localName
+                          Symbol (SymbolName _ localName) _ -> err stack "Fully-qualified symbol in import list"
+                          x -> err stack "Non-symbol in import list"
+
+                      for symbolArgs $ \sym ->
+                        case M.size (M.filterWithKey (\k _ -> localName k == sym) globalsToImport) of
+                          0 -> err stack $ "No symbol " <> sym <> " found in " <> mod
+                          1 -> pure ()
+                          _ -> err stack $ "Multiple symbols matching " <> sym <> " found in " <> mod
+
+                      let 
+                        symbolPred sym _ =
+                          case symbolArgs of
+                            [] -> True
+                            symArgs -> localName sym `elem` symArgs
+  
+                      let aliased = mapPairs (\k v -> (k{namespace = Nothing}, v)) . M.filterWithKey symbolPred $ globalsToImport
+                      modifyIORef globals $ M.union aliased
+                          
+                    [x] -> typeErr stack 2 "import" "list" x
+                    [] -> pure ()
+                    _ -> arityErr stack "import"
                   pure Nil
             x -> typeErr stack 1 "import" "string" x
         _ -> arityErr stack "import"
