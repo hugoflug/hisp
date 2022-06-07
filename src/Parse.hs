@@ -4,7 +4,8 @@ import Text.Parsec
 import Text.Parsec.Expr
 import Text.Parsec.Language
 import Text.Parsec.Token
-import Lang (Value (..))
+import Lang (Value (..), SymbolName(..))
+import Data.List.Split (splitOn)
 
 import Data.Char (isAlpha, isAlphaNum, isAscii, isDigit)
 
@@ -41,7 +42,16 @@ strExpr = String' <$> m_stringLit
 symbolExpr = do
   pos <- getPosition
   sym <- m_identifier
-  pure $ Symbol sym pos
+  let parts = splitOn "/" sym
+
+  symName <- case parts of
+    [name] -> pure $ SymbolName Nothing name
+    ["", ""] -> pure $ SymbolName Nothing "/"
+    ["", _] -> fail $ "/ not allowed at beginning of symbol"
+    [_, ""] -> fail $ "/ not allowed at end of symbol"
+    [namespace, name] -> pure $ SymbolName (Just namespace) name
+    p -> fail $ "/ allowed only once in a symbol"
+  pure $ Symbol symName pos
 
 program = do
   m_whiteSpace

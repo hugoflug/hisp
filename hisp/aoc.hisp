@@ -1,3 +1,5 @@
+(ns "aoc")
+
 (import "core")
 
 (def intmax 1000000)

@@ -5,7 +5,7 @@ import Data.List (intercalate, foldl')
 import qualified Data.Map as M
 import Data.Map ((!?), union)
 import Data.Maybe (fromMaybe, isJust, isNothing)
-import Data.IORef (IORef, readIORef, modifyIORef)
+import Data.IORef (IORef, readIORef, modifyIORef, newIORef, writeIORef)
 import Data.Foldable (traverse_)
 import Data.Traversable (for)
 import Lang
@@ -13,21 +13,28 @@ import Parse (parse)
 import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
--- Refer to previous lets inside a let binding
+-- Namespaces
+-- Nested destructuring
+-- Floats
+-- Polymorphism/methods?
 -- CLI
 -- Better REPL (repline?)
--- Macros evaluated at load time
--- Destructuring?
+
+data SymbolValue = SymbolValue {
+  value :: Value,
+  imported :: Bool
+} deriving (Eq, Show)
 
 data Context = Context {
-  globals :: IORef (M.Map String Value),
+  globals :: IORef (M.Map SymbolName SymbolValue),
   locals :: M.Map String Value,
   currentDir :: String,
+  currentNamespace :: IORef (Maybe String),
   stack :: [StackEntry]
 }
 
 data StackEntry = StackEntry {
-  fnName :: String,
+  fnName :: SymbolName,
   pos :: SourcePos
 } deriving (Eq, Show)
 
@@ -41,7 +48,7 @@ zipRestWith _ as    []     = ([], as, [])
 zipRest :: [a] -> [b] -> ([(a,b)], [a], [b])
 zipRest = zipRestWith (,)
 
-pushStack :: String -> SourcePos -> [StackEntry] -> [StackEntry]
+pushStack :: SymbolName -> SourcePos -> [StackEntry] -> [StackEntry]
 pushStack name pos stack = (StackEntry name pos):stack
 
 destructure :: (Formal, Value) -> Either String [(String, Value)]
@@ -58,29 +65,35 @@ destructure (binding, value) =
         x -> Left $ "Destructuring failed: Value to be destructured not a list, was [" <> printVal x <> "]" 
 
 eval :: Context -> Value -> IO Value
-eval ctx@(Context globals locals _ stack) val =
+eval ctx@(Context globals locals _ currentNs stack) val =
   case val of
     Symbol name pos -> do
       let newStack = pushStack name pos stack
-      case locals !? name of
+      case locals !? (localName name) of
         Just v -> pure v
         Nothing -> do
           reg <- readIORef globals
-          case reg !? name of
-            Just v -> pure v
+          currNs <- readIORef currentNs
+          let fullyQualified = 
+                case name of
+                  SymbolName Nothing localName -> SymbolName currNs localName
+                  s -> s
+          case reg !? fullyQualified of
+            Just (SymbolValue v _) -> pure v
             Nothing -> case name of
-              "true" -> pure $ Bool' True
-              "false" -> pure $ Bool' False
-              "nil" -> pure Nil
-              name -> case parseBuiltin name of
+              (SymbolName Nothing "true") -> pure $ Bool' True
+              (SymbolName Nothing "false") -> pure $ Bool' False
+              (SymbolName Nothing "nil") -> pure Nil
+              s@(SymbolName Nothing localName) -> case parseBuiltin localName of
                 Just builtin -> pure $ Builtin' builtin
                 Nothing -> do
-                  err newStack $ "No such symbol [" <> name <> "]"
+                  err newStack $ "No such symbol [" <> show s <> "]"
+              s@(SymbolName _ _ ) -> err newStack $ "No such symbol [" <> show s <> "]"
 
     List (head : args) pos -> do
       let fnName = case head of 
             (Symbol name _) -> name
-            _ -> "(anon)"
+            _ -> SymbolName Nothing "(anon)"
       let newStack = pushStack fnName pos stack
       evaledHead <- eval ctx head
       case evaledHead of
@@ -119,8 +132,8 @@ fmtStack :: [StackEntry] -> String
 fmtStack = intercalate "\n" . fmap fmtStackEntry
 
 fmtStackEntry :: StackEntry -> String
-fmtStackEntry (StackEntry fnName pos) = 
-  fnName <> " @ " <> takeFileName (sourceName pos) <> ":" <> show (sourceLine pos) <> ":" <> show (sourceColumn pos) 
+fmtStackEntry (StackEntry name pos) = 
+  show name <> " @ " <> takeFileName (sourceName pos) <> ":" <> show (sourceLine pos) <> ":" <> show (sourceColumn pos) 
 
 printVal :: Value -> String 
 printVal v = case v of
@@ -128,7 +141,7 @@ printVal v = case v of
   String' i -> show i
   Bool' True -> "true"
   Bool' False -> "false"
-  Symbol name _ ->  name
+  s@(Symbol _ _) -> show s
   List vals _ -> "(" <> (printVals " " vals) <> ")"
   Function args varArg val _ macro -> "function" -- TODO: print it nicer
   Builtin' builtin -> show builtin -- TODO: print builtins like they are written
@@ -169,10 +182,11 @@ parseBuiltin name =
     "error" -> Just Error
     "read-file" -> Just Readfile
     "type" -> Just Type
+    "ns" -> Just Ns
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
-evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
+evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
   case builtin of
     Print -> do
       evaledValues <- traverse (eval ctx) args
@@ -200,11 +214,14 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
       pure $ Bool' $ not $ and boolArgs
     Def ->
       case args of
-        [Symbol name _, val] -> do
+        [Symbol (SymbolName Nothing localName) _, val] -> do
           evaledVal <- eval ctx val
+          currNs <- readIORef currentNs
           modifyIORef globals $ \glob ->
-            M.insert name evaledVal glob
+            M.insert (SymbolName currNs localName) (SymbolValue evaledVal False) glob
           pure Nil
+        [Symbol s@(SymbolName _ _) _, val] -> 
+          err stack $ "Namespace not allowed in symbol passed to def: [" <> show s <> "]"
         [x, _] -> typeErr stack 1 "def" "symbol" x
         _ -> arityErr stack "def"
     Fn -> evalFn stack locals args
@@ -322,9 +339,29 @@ evalBuiltin ctx@(Context globals locals currDir stack) builtin args =
                 Left e -> errNoStack $ show e
                 Right exprs -> do
                   let newCurrDir = takeDirectory filename
-                  traverse_ (eval (Context globals M.empty newCurrDir [])) exprs
+                  newCurrNs <- newIORef Nothing
+                  newGlobals <- newIORef M.empty
+                  traverse_ (eval (Context newGlobals M.empty newCurrDir newCurrNs [])) exprs
+                  postGlobals <- readIORef newGlobals
+                  let 
+                    globalsToImport = 
+                      M.map (\v -> v{imported = True}) . M.filter (not . imported) $ postGlobals
+                  modifyIORef globals $ M.union globalsToImport
                   pure Nil
             x -> typeErr stack 1 "import" "string" x
+        _ -> arityErr stack "import"
+    Ns ->
+      case args of 
+        [arg] -> do
+          evaledArg <- eval ctx arg
+          case evaledArg of
+            String' ns -> do
+              writeIORef currentNs (Just ns)
+              pure Nil
+            x -> typeErr stack 1 "import" "string" x
+        [] ->  do
+          writeIORef currentNs Nothing
+          pure Nil
         _ -> arityErr stack "import"
     Error ->
       case args of
@@ -388,24 +425,27 @@ dropLast n = reverse . drop n . reverse
 parseFormal :: Value -> Either String Formal
 parseFormal val =
   case val of
-    Symbol name _ -> Right $ SingleFormal name
+    Symbol (SymbolName Nothing name) _ -> Right $ SingleFormal name
+    Symbol s@(SymbolName _ _) _ -> Left $ "Namespace in function formal: [" <> show s <> "]"
     List vals _ -> do
        names <- for vals $ \(val) ->
         case val of
-          Symbol name _ -> pure name
+          Symbol (SymbolName Nothing name) _ -> pure name
+          Symbol s@(SymbolName _ _) _ -> Left $ "Namespace in function formal: [" <> show s <> "]"
           x -> Left $ "Value in destructuring list not a symbol, was [" <> printVal x <> "]" 
        Right $ DestructuringFormal names
-    x -> Left $ "Function argument not a symbol or list, was [" <> printVal x <> "]" 
+    x -> Left $ "Function formal not a symbol or list, was [" <> printVal x <> "]" 
 
 evalFn :: [StackEntry] -> M.Map String Value -> [Value] -> IO Value
 evalFn stack captures values =
   case values of
     [List formals _, body] -> do
       maybeVarArg <- case last2 formals of
-          Just (Symbol "&" _, lastArg) ->
+          Just (Symbol (SymbolName Nothing "&") _, lastArg) ->
             case lastArg of
-              Symbol name _ -> pure $ Just name
-              x -> err stack $ "Variadic function argument not a symbol, was: [" <> printVal x  <> "]"  
+              Symbol (SymbolName Nothing name) _ -> pure $ Just name
+              Symbol s@(SymbolName _ _) _ -> err stack $ "Namespace in variadic function formal: [" <> show s <> "]"
+              x -> err stack $ "Variadic function formal not a symbol, was: [" <> printVal x  <> "]"  
           _ -> pure Nothing
       let nonVarArgFormals = if isJust maybeVarArg then dropLast 2 formals else formals
       bindings <- case traverse parseFormal nonVarArgFormals of
@@ -416,9 +456,9 @@ evalFn stack captures values =
     _ -> err stack $ "Wrong number of arguments to fn"
 
 quote :: Context -> Value -> IO Value
-quote ctx@(Context globals locals _ stack) val =
+quote ctx@(Context globals locals _ _ stack) val =
   case val of
-    List [Symbol "~" _, v] _ -> eval ctx v
+    List [Symbol (SymbolName Nothing "~") _, v] _ -> eval ctx v
     List vals pos -> do
       qVals <- traverse (quote ctx) vals
       pure $ List qVals pos

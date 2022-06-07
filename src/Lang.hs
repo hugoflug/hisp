@@ -7,7 +7,7 @@ data Value =
   Bool' Bool |
   Int' Integer |
   String' String |
-  Symbol String SourcePos |
+  Symbol SymbolName SourcePos |
   List [Value] SourcePos |
   Function {
     formals :: [Formal],
@@ -19,6 +19,17 @@ data Value =
   Builtin' Builtin |
   Nil
   deriving (Show, Eq)
+
+data SymbolName = SymbolName {
+  namespace :: Maybe String,
+  localName :: String
+} deriving (Eq, Ord)
+
+instance Show SymbolName where
+  show (SymbolName namespace localName) = 
+    case namespace of
+      Just ns -> ns <> "/" <> localName
+      Nothing -> localName
 
 data Formal =
   SingleFormal String |
@@ -48,5 +59,6 @@ data Builtin =
   Str | 
   Import |
   Error |
-  Type
+  Type |
+  Ns
   deriving (Show, Eq)

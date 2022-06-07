@@ -28,11 +28,13 @@ run' filename currDir program = do
   globals <- newIORef M.empty
   run filename currDir globals program
 
-run :: String -> String -> IORef (M.Map String Value) -> String -> IO [Value]
+run :: String -> String -> IORef (M.Map SymbolName SymbolValue) -> String -> IO [Value]
 run filename currDir globals program = 
   case parse filename program of
     Left err -> error $ show err
-    Right exprs -> traverse (eval (Context globals M.empty currDir [])) exprs
+    Right exprs -> do
+      currNs <- newIORef Nothing
+      traverse (eval (Context globals M.empty currDir currNs [])) exprs
 
 repl :: IO ()
 repl = do

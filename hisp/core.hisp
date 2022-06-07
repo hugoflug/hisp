@@ -1,3 +1,5 @@
+(ns "core")
+
 (def defmacro 
   (set-macro true (fn (name args body) 
     (' (def (~ name) (set-macro true (fn (~ args) (~ body))))))))

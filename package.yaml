@@ -10,6 +10,7 @@ dependencies:
 - containers
 - directory
 - filepath
+- split
 
 library:
   source-dirs: src
