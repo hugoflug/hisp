@@ -2,6 +2,7 @@ module Lang where
 
 import Text.Parsec (SourcePos)
 import qualified Data.Map as M
+import Control.Concurrent.MVar (MVar)
 
 data Value = 
   Bool' Bool |
@@ -18,8 +19,12 @@ data Value =
   } |
   Builtin' Builtin |
   Custom String Value |
-  Nil
+  Nil |
+  Ref (MVar Value)
   deriving (Show, Eq)
+
+instance Show (MVar a) where
+  show _ = "var"
 
 data SymbolName = SymbolName {
   namespace :: Maybe String,
@@ -65,6 +70,10 @@ data Builtin =
   Unwrap |
   Ns |
   NewSymbol |
-  SymbolNameCmd |
+  GetSymbolName |
+  NewRef |
+  PutRef |
+  TakeRef |
+  Fork |
   Read
   deriving (Show, Eq)

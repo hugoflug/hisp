@@ -1,6 +1,8 @@
 module Eval where
 
-import Control.Monad (when, join)
+import Control.Concurrent.MVar (newEmptyMVar, takeMVar, putMVar)
+import Control.Concurrent (forkIO)
+import Control.Monad (when, join, void)
 import Data.List (intercalate, foldl')
 import qualified Data.Map as M
 import Data.Map ((!?), union)
@@ -161,6 +163,7 @@ printVal v = case v of
   Builtin' builtin -> show builtin -- TODO: print builtins like they are written
   Nil -> "nil"
   Custom name val -> printVal val <> "@" <> name  -- TODO: make print a method
+  Ref _ -> "ref"
 
 printVals :: String -> [Value] -> String
 printVals separator = intercalate separator . fmap printVal
@@ -202,7 +205,11 @@ parseBuiltin name =
     "new" -> Just New
     "unwrap" -> Just Unwrap
     "new-symbol" -> Just NewSymbol
-    "symbol-name" -> Just SymbolNameCmd
+    "symbol-name" -> Just GetSymbolName
+    "new-ref" -> Just NewRef
+    "put-ref" -> Just PutRef
+    "take-ref" -> Just TakeRef
+    "fork" -> Just Fork
     _ -> Nothing
 
 evalBuiltin :: Context -> Builtin -> [Value] -> IO Value
@@ -472,7 +479,7 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
             x -> typeErr stack 2 "new-symbol" "string" x
           pure $ Symbol (SymbolName nsStr localStr) (pos (head stack))
         _ -> arityErr stack "new-symbol"
-    SymbolNameCmd ->
+    GetSymbolName ->
       case args of
         [Symbol (SymbolName ns localName) _] -> do
           let 
@@ -482,6 +489,38 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
           pure $ List [nsVal, String' localName] (pos (head stack))
         [x] -> typeErr stack 1 "symbol-name" "symbol" x
         _ -> arityErr stack "symbol-name"
+    NewRef ->
+      case args of
+        [] -> do
+          ref <- newEmptyMVar
+          pure $ Ref ref
+        _ -> arityErr stack "new-ref"
+    PutRef ->
+      case args of
+        [refArg,  val] -> do
+          evaledRefArg <- eval ctx refArg
+          evaledVal <- eval ctx val
+          mvar <- case evaledRefArg of
+            Ref mvar -> pure mvar
+            x -> typeErr stack 1 "put-ref" "ref" x 
+          putMVar mvar evaledVal
+          pure Nil
+        _ -> arityErr stack "put-ref"
+    TakeRef ->
+      case args of
+        [refArg] -> do
+          evaledRefArg <- eval ctx refArg
+          mvar <- case evaledRefArg of
+            Ref mvar -> pure mvar
+            x -> typeErr stack 1 "take-ref" "ref" x 
+          takeMVar mvar
+        _ -> arityErr stack "put-ref"      
+    Fork ->
+      case args of
+        [body] -> do
+          forkIO $ void $ eval ctx body
+          pure Nil
+        _ -> arityErr stack "fork"   
 
 evalArithmetic ::  Context -> (Integer -> Integer -> Integer) -> String -> [Value] -> IO Value
 evalArithmetic ctx op name args = do

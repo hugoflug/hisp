@@ -268,3 +268,49 @@
   (l)
   (head (tail l)))
 (assert-equal (second (: 1 2 3)) 2)
+
+(defn lookup-impl
+  (args impls)
+  (if (empty? impls)
+    (error "No matching impl found")
+    (let
+      (impl (head impls)
+       impl-types (head impl)
+       impl-fn (second impl))
+      (if (= (map type args) impl-types) ; TODO: more clever matching algorithm, taking nil into account as wildcard
+        (apply impl-fn args)
+        (lookup-impl args (tail impls))))))
+
+(defn impls-name
+  (name)
+  (new-symbol
+    nil 
+    (str "_" (second (eval (' (symbol-name (~ name))))) "_impls")))
+
+(defmacro defmethod
+  (name)
+  (let (impls-sym (impls-name name))
+       (if (eval (' (read (~ impls-sym))))
+         nil
+         (' (do
+           (def (~ impls-sym) (new-ref))
+           (put-ref (~ impls-sym) ())
+           (defn (~ name) (& args) (lookup-impl args (~ impls-sym))))))))
+(assert-equal (expand-macro (defmethod foo)) 
+  (' 
+    (do 
+      (def _foo_impls (new-ref))
+      (put-ref _foo_impls ())
+      (defn foo (& args) (lookup-impl args _foo_impls)))))
+
+(defmacro impl 
+  (name args body)
+  (' 
+    (put-ref (~ (impls-name name))
+      (cons 
+        (cons 
+          (~ (cons (' :) (map second args))) 
+          (: (fn (~ (map head args)) (~ body))))
+        (take-ref (~ (impls-name name)))))))
+(assert-equal (expand-macro (impl eq ((a "int") (b "int")) (= a b))) 
+  (' (put-ref _eq_impls (cons (cons (: "int" "int") (: (fn (a b) (= a b)))) (take-ref _eq_impls)))))
