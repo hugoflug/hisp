@@ -269,6 +269,31 @@
   (head (tail l)))
 (assert-equal (second (: 1 2 3)) 2)
 
+(defn nil?
+  (v)
+  (= v nil))
+(assert-equal (nil? nil) true)
+(assert-equal (nil? 5) false)
+
+(defn impl-matches
+  (candidates impl-types)
+  (case (: (empty? candidates) (empty? impl-types))
+    (: true true) true
+    (: false false) 
+      (if (or (nil? (head impl-types)) (= (head impl-types) (head candidates)))
+        (impl-matches (tail candidates) (tail impl-types))
+        false)
+    (: true false) false
+    (: false true) false))
+(assert-equal (impl-matches (: "a" "b") (: "a" "b")) true)
+(assert-equal (impl-matches (: "a" "b") (: "a" nil)) true)
+(assert-equal (impl-matches (: "a" "b") (: nil nil)) true)
+(assert-equal (impl-matches (: "a" "c") (: "a" "b")) false)
+(assert-equal (impl-matches (:) (:)) true)
+(assert-equal (impl-matches (: "a") (:)) false)
+(assert-equal (impl-matches (:) (: "b")) false)
+
+
 (defn lookup-impl
   (args impls)
   (if (empty? impls)
@@ -277,7 +302,7 @@
       (impl (head impls)
        impl-types (head impl)
        impl-fn (second impl))
-      (if (= (map type args) impl-types) ; TODO: more clever matching algorithm, taking nil into account as wildcard
+      (if (impl-matches (map type args) impl-types) ; TODO: more clever matching algorithm, taking nil into account as wildcard
         (apply impl-fn args)
         (lookup-impl args (tail impls))))))
 
@@ -287,6 +312,13 @@
     nil 
     (str "_" (second (eval (' (symbol-name (~ name))))) "_impls")))
 
+(defn read-ref
+  (ref)
+  (let
+    (value (take-ref ref)
+     _     (put-ref ref value))
+    value))
+
 (defmacro defmethod
   (name)
   (let (impls-sym (impls-name name))
@@ -295,14 +327,15 @@
          (' (do
            (def (~ impls-sym) (new-ref))
            (put-ref (~ impls-sym) ())
-           (defn (~ name) (& args) (lookup-impl args (~ impls-sym))))))))
+           (defn (~ name) (& args) (lookup-impl args (read-ref (~ impls-sym)))))))))
 (assert-equal (expand-macro (defmethod foo)) 
   (' 
     (do 
       (def _foo_impls (new-ref))
       (put-ref _foo_impls ())
-      (defn foo (& args) (lookup-impl args _foo_impls)))))
+      (defn foo (& args) (lookup-impl args (read-ref _foo_impls))))))
 
+; TODO: fail if mapping already exists?
 (defmacro impl 
   (name args body)
   (' 
@@ -314,3 +347,7 @@
         (take-ref (~ (impls-name name)))))))
 (assert-equal (expand-macro (impl eq ((a "int") (b "int")) (= a b))) 
   (' (put-ref _eq_impls (cons (cons (: "int" "int") (: (fn (a b) (= a b)))) (take-ref _eq_impls)))))
+
+(defmethod eq)
+
+(defmethod reduce)
