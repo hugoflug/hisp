@@ -280,7 +280,9 @@
   (case (: (empty? candidates) (empty? impl-types))
     (: true true) true
     (: false false) 
-      (if (or (nil? (head impl-types)) (= (head impl-types) (head candidates)))
+      (if (or 
+          (nil? (head impl-types)) 
+          (= (head impl-types) (head candidates)))
         (impl-matches (tail candidates) (tail impl-types))
         false)
     (: true false) false
@@ -293,7 +295,7 @@
 (assert-equal (impl-matches (: "a") (:)) false)
 (assert-equal (impl-matches (:) (: "b")) false)
 
-
+; TODO: make algorithm more clever (count number of matching args?)
 (defn lookup-impl
   (args impls)
   (if (empty? impls)
@@ -302,7 +304,7 @@
       (impl (head impls)
        impl-types (head impl)
        impl-fn (second impl))
-      (if (impl-matches (map type args) impl-types) ; TODO: more clever matching algorithm, taking nil into account as wildcard
+      (if (impl-matches (map type args) impl-types) 
         (apply impl-fn args)
         (lookup-impl args (tail impls))))))
 
@@ -348,6 +350,19 @@
 (assert-equal (expand-macro (impl eq ((a "int") (b "int")) (= a b))) 
   (' (put-ref _eq_impls (cons (cons (: "int" "int") (: (fn (a b) (= a b)))) (take-ref _eq_impls)))))
 
-(defmethod eq)
-
 (defmethod reduce)
+
+(impl reduce
+  ((f nil) (start nil) (list "list"))
+  (if (empty? list) 
+    start
+    (reduce f (f start (head list)) (tail list))))
+(assert-equal 
+  (reduce (fn (a b) (cons b a)) () (: 1 2 3))
+  (: 3 2 1))
+
+(defn count
+  (coll)
+  (reduce (fn (a _) (+ a 1)) 0 coll))
+(assert-equal
+  (count (: 7 8 9)) 3)

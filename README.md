@@ -3,7 +3,7 @@
 Hisp is a dialect of Lisp, with an interpreter written in Haskell.
 
 # Data types
-Hisp has 7 data types:
+Hisp has 8 built-in data types:
 
 - `int` written like `125`, `0`
 - `bool` written like `true`, `false`
@@ -11,7 +11,10 @@ Hisp has 7 data types:
 - `list` written like `(1 2 3)`, `(print 5)`, `("foo" "bar")`
 - `nil`, with the only value `nil`
 - `symbol`, written like `foo`, `a`
-- `function`, created using the `fn` built-in function
+- `function`, created using the `fn` built-in
+- `ref`, created using the `new-ref` built-in
+
+Hisp also supports custom data types. Values with custom types can be created using the `new` built-in.
 
 # Evaluation
 Hisp is evaluated in typical Lisp fashion:
@@ -19,7 +22,8 @@ Hisp is evaluated in typical Lisp fashion:
 Evaluating a list where the first element is not a function will cause an error to be thrown.
 - Symbols are evaluated by looking up, in order:
     - Any function arguments in lexical scope
-    - Any symbols in global scope (bound using `def`)
+    - Any bindings in the current namespace (bound using `def`)
+    - Any bindings in the default namespace
     - Any built-in functions
 
     If no mapping for the symbol is found, an error will be thrown.
@@ -75,7 +79,6 @@ Macros are a special kind of function where:
 
 A function can be turned into a macro, and vice versa, using the `set-macro` built-in function.
 
-
 # Built-ins
 
 ## core
@@ -90,6 +93,8 @@ A function can be turned into a macro, and vice versa, using the `set-macro` bui
 - `import` Import another hisp file 
 - `type` Return a string representing the type of the value
 - `ns` Set the current namespace
+- `new` Create a new value of a custom type
+- `unwrap` Unwrap a custom type
 
 ## arithmetic
 Perform arithmetic on integers
@@ -109,15 +114,32 @@ Perform arithmetic on integers
 ## control flow
 - `if` Return second argument if first is `true`, return third argument if first is `false` or `nil`
 
+## concurrency
+- `fork` Evaluate the given expression on a new thread
+- `new-ref` Create a new `ref`
+- `put-ref` Put a value into a `ref`, blocking if the `ref` already holds a value
+- `take-ref` Take a value from a `ref`
+
 ## lists
 - `cons` Prepend a value to a list
-- `head` Return the first value in a list. Errors on empty list.
+- `head` Return the first value in a list. Errors on empty list
 - `tail` Return list without the first value
 
 ## strings
 - `str` Turn any number of values into a single string
 - `split` Split a string into a list of characters
 
+## symbols
+- `new-symbol` Create a new symbol dynamically from a namespace and a name
+- `symbol-name` Return the name and namespace of a symbol
+- `read` Look up the value a symbol is bound to, returns `nil` if no binding was found
+
 ## I/O
 - `print` Print to stdout
 - `read-file` Read a file into a string
+
+# Sections to be written
+- Namespaces
+- Concurrency
+- Standard library
+- Method system

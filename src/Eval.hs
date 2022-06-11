@@ -15,13 +15,6 @@ import Parse (parse)
 import System.FilePath (takeDirectory, takeFileName)
 import Text.Parsec (SourcePos, sourceLine, sourceColumn, sourceName)
 
--- Namespaces
--- Nested destructuring
--- Floats
--- Polymorphism/methods?
--- CLI
--- Better REPL (repline?)
-
 data SymbolValue = SymbolValue {
   value :: Value,
   imported :: Bool
@@ -291,7 +284,8 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
           evaledList' <- case evaledList of
             List ls _ -> pure ls
             x -> typeErr stack 2 "apply" "list" x
-          eval ctx (List (fn:evaledList') (pos (head stack)))
+          let quotedList = (\v -> List [Builtin' Quote, v] (pos (head stack))) <$> evaledList'
+          eval ctx (List (fn:quotedList) (pos (head stack)))
         _ -> arityErr stack "apply"
     Cons ->
       case args of

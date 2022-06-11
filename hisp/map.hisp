@@ -43,33 +43,15 @@
   (& args)
   (mmap' (split-in-pairs args)))
 
-(impl eq ((a "map") (b "map")) true)
-
 (impl reduce 
   ((f nil) (start nil) (struct "map"))
   (if (empty? (unwrap struct)) 
     start
-    (let ((elem left right) (unwrap struct))
-      (case (: (empty? (unwrap left)) (empty? (unwrap right)))
-        (: true true) (f start elem)
-        (: false true) (f (reduce f start left) elem)
-        (: true false) (f (reduce f start right) elem)
-        (: false false)
-          (let 
-            (lred (reduce f start left)
-             nred (f lred elem))
-              (reduce f nred right))))))
-
-(reduce (fn (a b) (cons b a)) () (mmap 4 7 8 9 5 1))
-
-(defn length
-  (coll)
-  (reduce (fn (a b) (+ a 1)) 0 coll))
-
-;(length (mmap 
-;  5 2 
-;  7 3 
-;  9 8 
-;  6 2))
-
-;(length (mmap 1 2 3 4 5 6 7 8))
+    (let (
+      (elem left right) (unwrap struct)
+       lred (if (empty? (unwrap left)) start (reduce f start left))
+       nred (f lred elem))
+        (if (empty? (unwrap right)) nred (reduce f nred right)))))
+(assert-equal 
+  (reduce (fn (a b) (cons b a)) () (mmap 1 2  3 4))
+  (: (: 3 4) (: 1 2)))
