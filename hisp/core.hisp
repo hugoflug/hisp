@@ -366,3 +366,12 @@
   (reduce (fn (a _) (+ a 1)) 0 coll))
 (assert-equal
   (count (: 7 8 9)) 3)
+
+(defmacro deftype
+  (name-sym)
+  (let
+    ((_ name) (eval (' (symbol-name (~ name-sym)))))
+    (' (def (~ (new-symbol nil name)) (~ (str (ns) "/" name))))))
+(assert-equal 
+  (expand-macro (deftype foo))
+  (' (def foo "core/foo")))

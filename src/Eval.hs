@@ -407,17 +407,22 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
             x -> typeErr stack 1 "import" "string" x
         _ -> arityErr stack "import"
     Ns ->
-      case args of 
+      case args of
+        [] -> do
+          currNs <- readIORef currentNs
+          pure $ case currNs of
+            Just ns -> String' ns
+            Nothing -> Nil
         [arg] -> do
           evaledArg <- eval ctx arg
           case evaledArg of
             String' ns -> do
               writeIORef currentNs (Just ns)
               pure Nil
+            Nil -> do
+              writeIORef currentNs Nothing
+              pure Nil
             x -> typeErr stack 1 "import" "string" x
-        [] ->  do
-          writeIORef currentNs Nothing
-          pure Nil
         _ -> arityErr stack "import"
     Error ->
       case args of
@@ -446,8 +451,9 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
     New ->
       case args of 
         [name, arg] -> do
+          evaledNameArg <- eval ctx name
           evaledArg <- eval ctx arg
-          nameStr <- case name of
+          nameStr <- case evaledNameArg of
             String' n -> pure n
             x -> typeErr stack 1 "new" "string" x
           pure $ Custom nameStr evaledArg

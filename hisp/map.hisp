@@ -1,8 +1,10 @@
 (import "core" ())
 
+(deftype mapt)
+
 (defn new-node
   (& elems)
-  (new "map" elems))
+  (new mapt elems))
 
 (defn insert
   (key value map)
@@ -44,7 +46,7 @@
   (mmap' (split-in-pairs args)))
 
 (impl reduce 
-  ((f nil) (start nil) (struct "map"))
+  ((f nil) (start nil) (struct mapt))
   (if (empty? (unwrap struct)) 
     start
     (let (

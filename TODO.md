@@ -9,6 +9,7 @@
 - Better REPL
 - Actual macros, that only run once on module import?
 - More I/O actions
+- Catching errors
 
 # Stdlib
 - Smarter impl matching for methods:
