@@ -481,13 +481,16 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
         _ -> arityErr stack "new-symbol"
     GetSymbolName ->
       case args of
-        [Symbol (SymbolName ns localName) _] -> do
-          let 
-            nsVal = case ns of
-              Nothing -> Nil
-              Just name -> String' name
-          pure $ List [nsVal, String' localName] (pos (head stack))
-        [x] -> typeErr stack 1 "symbol-name" "symbol" x
+        [symArg] -> do
+          evaledSymArg <- eval ctx symArg
+          case evaledSymArg of
+            Symbol (SymbolName ns localName) _ -> do
+              let 
+                nsVal = case ns of
+                  Nothing -> Nil
+                  Just name -> String' name
+              pure $ List [nsVal, String' localName] (pos (head stack))
+            x -> typeErr stack 1 "symbol-name" "symbol" x
         _ -> arityErr stack "symbol-name"
     NewRef ->
       case args of

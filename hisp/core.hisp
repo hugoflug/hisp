@@ -312,7 +312,7 @@
   (name)
   (new-symbol
     nil 
-    (str "_" (second (eval (' (symbol-name (~ name))))) "_impls")))
+    (str "_" (second (symbol-name name)) "_impls")))
 
 (defn read-ref
   (ref)
@@ -370,7 +370,7 @@
 (defmacro deftype
   (name-sym)
   (let
-    ((_ name) (eval (' (symbol-name (~ name-sym)))))
+    ((_ name) (symbol-name name-sym))
     (' (def (~ (new-symbol nil name)) (~ (str (ns) "/" name))))))
 (assert-equal 
   (expand-macro (deftype foo))
