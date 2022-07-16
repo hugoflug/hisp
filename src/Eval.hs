@@ -517,7 +517,7 @@ evalBuiltin ctx@(Context globals locals currDir currentNs stack) builtin args =
             Ref mvar -> pure mvar
             x -> typeErr stack 1 "take-ref" "ref" x 
           takeMVar mvar
-        _ -> arityErr stack "put-ref"      
+        _ -> arityErr stack "take-ref"      
     Fork ->
       case args of
         [body] -> do

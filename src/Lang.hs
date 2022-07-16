@@ -18,7 +18,7 @@ data Value =
     isMacro :: Bool
   } |
   Builtin' Builtin |
-  Custom String Value | -- TODO: should type identifier be something else than just a string?
+  Custom String Value |
   Nil |
   Ref (MVar Value)
   deriving (Show, Eq)
